@@ -1,6 +1,6 @@
 // Procedurally built, procedurally animated anime-style character rig.
 import * as THREE from 'three';
-import { clothGradient, skinGradient, charOutlineMat, sharedUniforms, strawTexture } from '../world/materials';
+import { clothGradient, clothTexture, skinGradient, charOutlineMat, sharedUniforms, strawTexture } from '../world/materials';
 import { EXPR, Expr, FaceOpts, FaceStyle, atlasView, beardGeometry, faceAtlas, faceGeometry, fistGeometry, hairGeometry, headGeometry, headPoint, setAtlasCell, shell } from './rigParts';
 
 // Flickering rim-lit flame aura for awakened fighters.
@@ -327,8 +327,8 @@ export class Humanoid {
     this.root.scale.setScalar(this.scale);
   }
 
-  private mat(color: string | number, skin = false) {
-    const m = new THREE.MeshToonMaterial({ color: new THREE.Color(color as any), gradientMap: skin ? skinGradient() : clothGradient() });
+  private mat(color: string | number, skin = false, cloth = false) {
+    const m = new THREE.MeshToonMaterial({ color: new THREE.Color(color as any), gradientMap: skin ? skinGradient() : clothGradient(), map: cloth ? clothTexture() : null });
     rimLight(m);
     this.mats.push(m);
     return m;
@@ -348,7 +348,7 @@ export class Humanoid {
     const sb = Math.sqrt(b);
     const belly = L.belly ?? 0;
     const bl = belly * 0.07, bl2 = belly * 0.1;
-    const skin = this.mat(L.skin, true), shirt = this.mat(L.shirt), pants = this.mat(L.pants), shoes = this.mat(L.shoes ?? 0x3a2a1e);
+    const skin = this.mat(L.skin, true), shirt = this.mat(L.shirt, false, true), pants = this.mat(L.pants, false, true), shoes = this.mat(L.shoes ?? 0x3a2a1e);
     this.skinMat = skin;
     const hairM = this.mat(L.hair);
     this.hairMat = hairM;
@@ -382,7 +382,7 @@ export class Humanoid {
         pec.scale.set(1.05, 0.6, 0.32);
       }
       // Open sleeveless vest with buttons.
-      const vm = this.mat(L.shirt);
+      const vm = this.mat(L.shirt, false, true);
       vm.side = THREE.DoubleSide;
       const prof: [number, number, number][] = [[-0.37, 0.184 * b + bl, 0.148 * b + bl2], [-0.26, 0.178 * b + bl * 1.3, 0.144 * b + bl2 * 1.4], [-0.15, 0.184 * b, 0.15 * b], [-0.06, 0.204 * b, 0.158 * b], [0.03, 0.228 * b, 0.162 * b], [0.1, 0.238 * b, 0.156 * b], [0.15, 0.214 * b, 0.136 * b], [0.19, 0.144 * b, 0.104 * b], [0.215, 0.088, 0.078]];
       const gap = (y: number) => 0.32 + clamp((y + 0.37) / 0.55, 0, 1) * 0.62;
@@ -396,15 +396,18 @@ export class Humanoid {
       }
     } else if (!L.armor) {
       // Collar and a shirt hem hanging over the waistband.
-      const cm = this.mat(new THREE.Color(L.shirt as any).multiplyScalar(0.82).getHex());
+      const cm = this.mat(new THREE.Color(L.shirt as any).multiplyScalar(0.82).getHex(), false, true);
       cm.side = THREE.DoubleSide;
       this.mesh(shell([[0.165, 0.16 * b, 0.118 * b], [0.2, 0.12 * b, 0.1 * b], [0.25, 0.085, 0.08]], () => 0.45, 20), cm, chest, 0, 0, 0, false);
-      const hem = this.mat(L.shirt);
+      const hem = this.mat(L.shirt, false, true);
       hem.side = THREE.DoubleSide;
       this.mesh(shell([[-0.12, 0.195 * b + bl, 0.158 * b + bl2], [-0.02, 0.18 * b + bl, 0.142 * b + bl2], [0.04, 0.172 * b + bl, 0.136 * b + bl2]]), hem, spine, 0, 0, 0, false);
+      // Button placket down the shirt front.
+      const pk = this.mat(new THREE.Color(L.shirt as any).multiplyScalar(0.7).getHex());
+      for (const y of [-0.09, 0.0, 0.09]) this.mesh(new THREE.SphereGeometry(0.011, 6, 5), pk, chest, 0, y, (y < 0 ? 0.137 : y < 0.05 ? 0.146 : 0.143) * b + 0.004, false);
     }
     if (L.sash) {
-      const sm = this.mat(L.sash);
+      const sm = this.mat(L.sash, false, true);
       sm.side = THREE.DoubleSide;
       this.mesh(shell([[-0.05, 0.19 * b + bl, 0.152 * b + bl2], [0.05, 0.186 * b + bl, 0.148 * b + bl2]]), sm, spine, 0, 0, 0, false);
       this.mesh(new THREE.SphereGeometry(0.04, 8, 6), sm, spine, 0.15 * b + bl, -0.01, 0.09 * b, false);
@@ -429,7 +432,7 @@ export class Humanoid {
       plate.rotation.y = Math.PI;
     }
     if (L.cape) {
-      const cm = new THREE.MeshToonMaterial({ color: new THREE.Color(L.cape as any), gradientMap: clothGradient(), side: THREE.DoubleSide });
+      const cm = new THREE.MeshToonMaterial({ color: new THREE.Color(L.cape as any), gradientMap: clothGradient(), map: clothTexture(), side: THREE.DoubleSide });
       this.mats.push(cm);
       const cape = new THREE.Mesh(shell([[-1.05, 0.36 * b, 0.33 * b], [-0.6, 0.31 * b, 0.27 * b], [-0.2, 0.27 * b, 0.2 * b], [0.08, 0.275 * b, 0.17 * b], [0.16, 0.23 * b, 0.145 * b], [0.21, 0.15 * b, 0.11 * b]], (y) => 0.75 + clamp(-y, 0, 1) * 0.25, 30), cm);
       cape.castShadow = true;

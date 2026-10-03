@@ -27,6 +27,29 @@ export function skinGradient() { return (skinGrad ??= grad([196, 224, 250, 255])
 /** Character cloth: readable shadow side without crushing colour. */
 export function clothGradient() { return (clothGrad ??= grad([128, 184, 240, 255])); }
 
+let clothTex: THREE.CanvasTexture | null = null;
+/** Subtle woven-fabric texture (twill lines + fibre noise) that multiplies cloth colours. */
+export function clothTexture() {
+  if (clothTex) return clothTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(128, 128);
+  for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+    const twill = ((x + y) % 4 < 2 ? 1 : 0.94) * (y % 2 ? 1 : 0.97);
+    const v = Math.round(255 * twill * (0.95 + Math.random() * 0.05));
+    const i = (y * 128 + x) * 4;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  clothTex = new THREE.CanvasTexture(c);
+  clothTex.wrapS = clothTex.wrapT = THREE.RepeatWrapping;
+  clothTex.repeat.set(3, 3);
+  clothTex.colorSpace = THREE.SRGBColorSpace;
+  clothTex.anisotropy = 4;
+  return clothTex;
+}
+
 const toonCache = new Map<string, THREE.MeshToonMaterial>();
 export function toon(color: number | string, opts: { emissive?: number; emissiveIntensity?: number; transparent?: boolean; opacity?: number } = {}) {
   const key = String(color) + JSON.stringify(opts);
