@@ -158,14 +158,24 @@ export function terrainMaterial(lava = 0) {
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         if (uLava > 0.0) {
-          // Glowing magma veins in dark rock, pulsing slowly.
-          vec2 w = vWPos.xz;
-          float v1 = abs(wNoise(w * 0.045) - 0.5), v2 = abs(wNoise(w * 0.11 + 7.0) - 0.5);
-          float vein = (1.0 - smoothstep(0.0, 0.012, v1)) + 0.5 * (1.0 - smoothstep(0.0, 0.008, v2));
+          // Cooling lava crust: dark basalt plates with glowing seams, in patches across the slopes.
+          vec2 w = vWPos.xz * 0.11;
+          vec2 n = floor(w), f = fract(w);
+          float d1 = 8.0, d2 = 8.0;
+          for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+            vec2 gq = vec2(float(i), float(j));
+            vec2 o = fract(sin(vec2(dot(n + gq, vec2(127.1, 311.7)), dot(n + gq, vec2(269.5, 183.3)))) * 43758.5453);
+            vec2 r = gq + o - f;
+            float d = dot(r, r);
+            if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+          }
+          float seam = 1.0 - smoothstep(0.0, 0.07, sqrt(d2) - sqrt(d1));
           float lum0 = dot(vColor.rgb, vec3(0.3, 0.59, 0.11));
-          float mask = smoothstep(0.56, 0.7, wFbm(w * 0.012 + 3.0)) * (1.0 - smoothstep(0.05, 0.09, lum0));
-          float pulse = 0.75 + 0.25 * sin(uTime * 1.3 + wNoise(w * 0.02) * 6.28);
-          totalEmissiveRadiance += mix(vec3(1.0, 0.25, 0.03), vec3(1.0, 0.75, 0.3), smoothstep(0.6, 1.2, vein)) * vein * mask * pulse * uLava * 1.6;
+          float field = smoothstep(0.5, 0.64, wFbm(vWPos.xz * 0.010 + 3.0)) * (1.0 - smoothstep(0.07, 0.12, lum0));
+          float pulse = 0.7 + 0.3 * sin(uTime * 1.1 + wNoise(vWPos.xz * 0.03) * 6.28);
+          vec3 hot = mix(vec3(1.0, 0.22, 0.02), vec3(1.0, 0.7, 0.25), seam * seam);
+          totalEmissiveRadiance += hot * seam * field * pulse * uLava * 1.7;
+          totalEmissiveRadiance += vec3(0.35, 0.06, 0.0) * field * (1.0 - sqrt(d1)) * 0.15 * uLava;
         }`);
   };
   m.customProgramCacheKey = () => 'terrain-v4';
