@@ -137,7 +137,7 @@ export const ISLANDS: IslandDef[] = [
       'A jungle island ringed by living coral, home to ruins older than the Navy itself.',
       'Captain Barnacle anchors his fleet here and taxes every fisherman who dares sail the reef.',
     ],
-    theme: { sand: 0xf3e2b0, grass: 0x2f9e44, grass2: 0x5cc23c, rock: 0x7a7468, peak: 0x5d6b52, path: 0xd8c08a, shallow: 0x29e0c9, fog: 0xc2ecf0, skyTop: 0x2f8be6, skyHorizon: 0xd2f4fb, ambient: 'leaves', storm: 0 },
+    theme: { sand: 0xf3e2b0, grass: 0x3f9a48, grass2: 0x68bb48, rock: 0x7a7468, peak: 0x5d6b52, path: 0xd8c08a, shallow: 0x29e0c9, fog: 0xc2ecf0, skyTop: 0x2f8be6, skyHorizon: 0xd2f4fb, ambient: 'leaves', storm: 0 },
   },
   {
     id: 2, name: 'Emberpeak', title: 'The Mountain That Breathes', style: 'volcano',

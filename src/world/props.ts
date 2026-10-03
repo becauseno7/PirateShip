@@ -342,9 +342,9 @@ export function iceFloe(): THREE.BufferGeometry {
 }
 
 // ------------------------------------------------------------------ buildings
-export function hut(b: GeoBatch, wall = 0xc9a86a, roof = 0xd8b45a) {
+export function hut(b: GeoBatch, wall = 0xe2c58e, roof = 0xdcb85e) {
   // Stilt hut: bamboo deck, woven walls, layered thatch with a fringe, ladder and porch.
-  const bamboo = 0x9a8448, dark = 0x5a4428;
+  const bamboo = 0xb89c5a, dark = 0x6a5030;
   for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; b.cyl(0.16, 1.4, Math.cos(a) * 2.7, -0.4, Math.sin(a) * 2.7, dark, 6); }
   b.cyl(3.4, 0.25, 0, 1.0, 0, 0x8a6a3a, 12);
   b.cyl(2.8, 2.3, 0, 1.25, 0, wall, 12);

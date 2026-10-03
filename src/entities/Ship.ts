@@ -257,8 +257,9 @@ export class Ship implements Target {
     const pb = this.pos.clone().addScaledVector(fwd, L * 0.4), ps = this.pos.clone().addScaledVector(fwd, -L * 0.4);
     const pp = this.pos.clone().addScaledVector(r, W * 0.45), pst = this.pos.clone().addScaledVector(r, -W * 0.45);
     const hb = o.heightAt(pb.x, pb.z), hs = o.heightAt(ps.x, ps.z), hp = o.heightAt(pp.x, pp.z), hst = o.heightAt(pst.x, pst.z);
-    const heave = (hb + hs + hp + hst) / 4;
-    this.heave = damp(this.heave, heave, 4, dt);
+    // Weight the midships sample so the hull settles into troughs instead of bridging them.
+    const heave = (hb + hs + hp + hst + 2 * o.heightAt(this.pos.x, this.pos.z)) / 6;
+    this.heave = damp(this.heave, heave, 6, dt);
     this.pitch = damp(this.pitch, Math.atan2(hs - hb, L * 0.8) * 0.85, 3, dt);
     const lean = -this.rudder * Math.min(1, this.speed / this.maxSpeed) * 0.08;
     this.roll = damp(this.roll, Math.atan2(hst - hp, W * 0.9) * 0.9 + lean, 3, dt);
@@ -269,7 +270,7 @@ export class Ship implements Target {
       if (this.wreck) { sinkY = -Math.min(1.4, t * 0.4); sinkRoll = Math.min(0.22, t * 0.06); sinkPitch = Math.min(0.08, t * 0.02); }
       else { sinkY = -t * t * 0.35; sinkRoll = Math.min(0.6, t * 0.12); sinkPitch = Math.min(0.5, t * 0.08); }
     }
-    this.pos.y = this.heave - 0.25 + sinkY;
+    this.pos.y = this.heave - 0.42 + sinkY;
     this.group.position.copy(this.pos);
     this.group.rotation.set(this.pitch + sinkPitch, this.heading, this.roll + this.recoil + sinkRoll, 'YXZ');
     this.group.updateMatrixWorld(true);
@@ -301,7 +302,7 @@ export class Ship implements Target {
       for (const side of [-1, 1]) {
         const p = this.toWorld(new THREE.Vector3(side * this.dims.W * 0.35, 0, -L * 0.45));
         p.y = ctx.ocean.heightAt(p.x, p.z) + 0.2;
-        ctx.particles.emit({ pos: p, vel: this.right.multiplyScalar(side * -1.5).add(new THREE.Vector3(0, 0.6, 0)), life: 1.4, size: 0.9, sizeEnd: 2.2, color: 0xffffff, colorEnd: 0xd8f0ff, alpha: 0.4, drag: 1.5 });
+        ctx.particles.emit({ pos: p, vel: this.right.multiplyScalar(side * -1.5).add(new THREE.Vector3(0, 0.6, 0)), life: 1.4, size: 0.6, sizeEnd: 1.7, color: 0xffffff, colorEnd: 0xd8f0ff, alpha: 0.26, drag: 1.5 });
       }
     }
     if (Math.random() < rate) {

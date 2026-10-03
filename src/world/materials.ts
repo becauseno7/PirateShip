@@ -167,6 +167,11 @@ export function terrainMaterial(lava = 0, snow = 0) {
           float steepK = 1.0 - smoothstep(0.55, 0.85, ny);
           float strata = wNoise(vec2(w.x * 0.08 + w.y * 0.05, vWPos.y * 0.9));
           c *= 1.0 + (strata - 0.5) * 0.35 * steepK * (1.0 - uSnow);
+          // Sandstone cliffs: warm red-orange bands with pale caps, like desert mesas.
+          float bandF = fract(vWPos.y * 0.2 + wNoise(w * 0.03) * 0.7);
+          float band = smoothstep(0.3, 0.42, bandF) * (1.0 - smoothstep(0.62, 0.74, bandF));
+          float cliff = steepK * sandy * (1.0 - uSnow) * (1.0 - uLava);
+          c = mix(c, c * mix(vec3(1.06, 0.98, 0.9), vec3(1.14, 0.78, 0.6), band), cliff);
           // Alpine: broad snowfields on anything walkable, blue-grey stratified rock on the cliffs,
           // with snow caught in the cliff ledges and gullies.
           float cover = smoothstep(0.42, 0.6, ny + (wFbm(w * 0.06) - 0.5) * 0.3);
@@ -208,7 +213,7 @@ export function terrainMaterial(lava = 0, snow = 0) {
           totalEmissiveRadiance += vec3(0.35, 0.06, 0.0) * field * (1.0 - sqrt(d1)) * 0.15 * uLava;
         }`);
   };
-  m.customProgramCacheKey = () => 'terrain-v6';
+  m.customProgramCacheKey = () => 'terrain-v7';
   return m;
 }
 

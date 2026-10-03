@@ -1016,7 +1016,19 @@ export class Island {
       }, 18, 1);
     }
     // Oasis.
-    const op = pr(0.3, 0.6, 70);
+    // Oasis: of a few candidate spots, take the flattest so dunes don't cut across the water.
+    let op: readonly [number, number, number] | null = null, bestDev = Infinity;
+    for (let k = 0; k < 10; k++) {
+      const c = pr(0.3, 0.6, 70);
+      if (!c) continue;
+      const h0 = this.h(c[0], c[1]);
+      let dev = 0;
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        for (const rr of [8, 15]) dev = Math.max(dev, Math.abs(this.h(c[0] + Math.cos(a) * rr, c[1] + Math.sin(a) * rr) - h0));
+      }
+      if (dev < bestDev) { bestDev = dev; op = c; }
+    }
     if (op) this.landmark = new THREE.Vector3(op[0], this.h(op[0], op[1]), op[1]);
     if (op) {
       const pond = pondMaterial();
