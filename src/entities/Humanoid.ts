@@ -1,6 +1,7 @@
 // Procedurally built, procedurally animated anime-style character rig.
 import * as THREE from 'three';
-import { toonGradient, outlineMat, sharedUniforms } from '../world/materials';
+import { toonGradient, charOutlineMat, sharedUniforms, strawTexture } from '../world/materials';
+import { EXPR, Expr, FaceOpts, FaceStyle, atlasView, beardGeometry, faceAtlas, faceGeometry, fistGeometry, hairGeometry, headGeometry, headPoint, setAtlasCell, shell } from './rigParts';
 
 // Flickering rim-lit flame aura for awakened fighters.
 function auraMaterial(color: number) {
@@ -48,6 +49,8 @@ export interface RigLook {
   weaponColor?: number;
   outline?: boolean;
   belly?: number;
+  face?: FaceStyle;
+  iris?: string;
 }
 
 export interface AnimInput {
@@ -65,6 +68,8 @@ export interface AnimInput {
 type J = 'body' | 'hips' | 'spine' | 'chest' | 'neck' | 'head' | 'shL' | 'elL' | 'haL' | 'shR' | 'elR' | 'haR' | 'hiL' | 'knL' | 'ftL' | 'hiR' | 'knR' | 'ftR';
 type Pose = Partial<Record<J, [number, number, number]>>;
 const JOINTS: J[] = ['body', 'hips', 'spine', 'chest', 'neck', 'head', 'shL', 'elL', 'haL', 'shR', 'elR', 'haR', 'hiL', 'knL', 'ftL', 'hiR', 'knR', 'ftR'];
+
+const EXPR_FOR: Record<string, Expr> = { hit: 'pain', kneel: 'pain', victory: 'grin', wave: 'grin', eat: 'grin', block: 'angry' };
 
 const capCache = new Map<string, THREE.CapsuleGeometry>();
 function capsule(r: number, len: number) {
@@ -271,11 +276,15 @@ export class Humanoid {
   armR!: THREE.Group;
   weaponR: THREE.Object3D | null = null;
   weaponL: THREE.Object3D | null = null;
-  mouth!: THREE.Mesh;
   deadT = 0;
   scale: number;
   private aura: THREE.Mesh | null = null;
-  private eyeMats: THREE.MeshBasicMaterial[] = [];
+  private faceOpts!: FaceOpts;
+  private faceMat!: THREE.MeshToonMaterial;
+  private exprCur: Expr = 'neutral';
+  private blinkT = 2 + Math.random() * 3;
+  /** Forces a facial expression (cutscenes); null lets the rig pick one from its state. */
+  expr: Expr | null = null;
 
   constructor(look: RigLook) {
     this.look = look;
@@ -294,17 +303,16 @@ export class Humanoid {
     m.position.set(x, y, z);
     m.castShadow = true;
     parent.add(m);
-    if (outline && this.look.outline) {
-      const o = new THREE.Mesh(geo, outlineMat);
-      o.scale.setScalar(1.07);
-      m.add(o);
-    }
+    if (outline && this.look.outline) m.add(new THREE.Mesh(geo, charOutlineMat));
     return m;
   }
 
   private build() {
     const L = this.look;
     const b = L.build ?? 1;
+    const sb = Math.sqrt(b);
+    const belly = L.belly ?? 0;
+    const bl = belly * 0.07, bl2 = belly * 0.1;
     const skin = this.mat(L.skin), shirt = this.mat(L.shirt), pants = this.mat(L.pants), shoes = this.mat(L.shoes ?? 0x3a2a1e);
     this.skinMat = skin;
     const hairM = this.mat(L.hair);
@@ -324,115 +332,146 @@ export class Humanoid {
     const neck = g('neck', chest, 0, 0.2, 0);
     const head = g('head', neck, 0, 0.06, 0);
 
-    // Torso.
-    const belly = L.belly ?? 0;
-    const pelvis = this.mesh(new THREE.SphereGeometry(0.17, 12, 8), pants, hips, 0, 0, 0);
-    pelvis.scale.set(1.15 * b, 0.75, 0.85 * b);
-    const torso = this.mesh(capsule(0.16, 0.22), L.vest ? skin : shirt, spine, 0, 0.18, 0);
-    torso.scale.set(1.25 * b + belly * 0.4, 1, 0.85 * b + belly * 0.5);
-    const chestM = this.mesh(capsule(0.18, 0.12), L.vest ? skin : shirt, chest, 0, 0.02, 0);
-    chestM.scale.set(1.35 * b, 1, 0.9 * b);
-    if (L.vest) {
-      // Open vest panels over bare chest.
+    const bare = !!L.vest;
+    const torsoMat = bare ? skin : shirt;
+    const shorts = bare || L.hat === 'straw';
+    const sandals = L.hat === 'straw';
+
+    // Pelvis and torso: smooth elliptical shells (slim waist, broad chest).
+    this.mesh(shell([[-0.17, 0.04 * b, 0.035 * b], [-0.14, 0.12 * b, 0.1 * b], [-0.07, 0.172 * b + bl, 0.13 * b + bl2], [0, 0.182 * b + bl, 0.138 * b + bl2], [0.07, 0.176 * b + bl, 0.135 * b + bl2], [0.12, 0.165 * b + bl, 0.128 * b + bl2]]), pants, hips);
+    this.mesh(shell([[-0.08, 0.17 * b + bl, 0.132 * b + bl2], [0.02, 0.162 * b + bl * 1.4, 0.128 * b + bl2 * 1.5], [0.12, 0.158 * b + bl * 1.2, 0.13 * b + bl2 * 1.3], [0.22, 0.17 * b + bl * 0.5, 0.132 * b + bl2 * 0.5], [0.3, 0.18 * b, 0.136 * b]]), torsoMat, spine);
+    this.mesh(shell([[-0.16, 0.17 * b, 0.132 * b], [-0.06, 0.19 * b, 0.142 * b], [0.03, 0.214 * b, 0.146 * b], [0.1, 0.224 * b, 0.14 * b], [0.15, 0.2 * b, 0.12 * b], [0.19, 0.13 * b, 0.092 * b], [0.22, 0.07, 0.064]]), torsoMat, chest);
+    if (bare) {
       for (const s of [-1, 1]) {
-        const v = this.mesh(new THREE.BoxGeometry(0.14, 0.42, 0.33), shirt, spine, s * 0.17 * b, 0.25, 0, true);
-        v.scale.set(b, 1, b);
-        v.rotation.z = s * 0.05;
+        const pec = this.mesh(new THREE.SphereGeometry(0.085 * b, 12, 8), skin, chest, s * 0.085 * b, 0.045, 0.1 * b, false);
+        pec.scale.set(1.05, 0.6, 0.32);
       }
+      // Open sleeveless vest with buttons.
+      const vm = this.mat(L.shirt);
+      vm.side = THREE.DoubleSide;
+      const prof: [number, number, number][] = [[-0.37, 0.184 * b + bl, 0.148 * b + bl2], [-0.26, 0.178 * b + bl * 1.3, 0.144 * b + bl2 * 1.4], [-0.15, 0.184 * b, 0.15 * b], [-0.06, 0.204 * b, 0.158 * b], [0.03, 0.228 * b, 0.162 * b], [0.1, 0.238 * b, 0.156 * b], [0.15, 0.214 * b, 0.136 * b], [0.19, 0.144 * b, 0.104 * b], [0.215, 0.088, 0.078]];
+      const gap = (y: number) => 0.32 + clamp((y + 0.37) / 0.55, 0, 1) * 0.62;
+      const vest = this.mesh(shell(prof, gap, 32), vm, chest);
+      vest.castShadow = true;
+      const btn = this.mat(0xe9c46a);
+      for (const y of [-0.27, -0.16, -0.05]) {
+        const a = -(gap(y) + 0.1);
+        const pr = prof.find((p) => p[0] >= y) ?? prof[0];
+        this.mesh(new THREE.SphereGeometry(0.014, 6, 5), btn, chest, Math.sin(a) * pr[1] * 1.03, y, Math.cos(a) * pr[2] * 1.03, false);
+      }
+    } else if (!L.armor) {
+      // Collar and a shirt hem hanging over the waistband.
+      const cm = this.mat(new THREE.Color(L.shirt as any).multiplyScalar(0.82).getHex());
+      cm.side = THREE.DoubleSide;
+      this.mesh(shell([[0.165, 0.16 * b, 0.118 * b], [0.2, 0.12 * b, 0.1 * b], [0.25, 0.085, 0.08]], () => 0.45, 20), cm, chest, 0, 0, 0, false);
+      const hem = this.mat(L.shirt);
+      hem.side = THREE.DoubleSide;
+      this.mesh(shell([[-0.12, 0.195 * b + bl, 0.158 * b + bl2], [-0.02, 0.18 * b + bl, 0.142 * b + bl2], [0.04, 0.172 * b + bl, 0.136 * b + bl2]]), hem, spine, 0, 0, 0, false);
     }
     if (L.sash) {
-      const sash = this.mesh(new THREE.CylinderGeometry(0.205, 0.2, 0.09, 14), this.mat(L.sash), spine, 0, 0.0, 0);
-      sash.scale.set(1.25 * b + belly * 0.4, 1, 0.9 * b + belly * 0.5);
+      const sm = this.mat(L.sash);
+      sm.side = THREE.DoubleSide;
+      this.mesh(shell([[-0.05, 0.19 * b + bl, 0.152 * b + bl2], [0.05, 0.186 * b + bl, 0.148 * b + bl2]]), sm, spine, 0, 0, 0, false);
+      this.mesh(new THREE.SphereGeometry(0.04, 8, 6), sm, spine, 0.15 * b + bl, -0.01, 0.09 * b, false);
+      for (const t of [-1, 1]) {
+        const tail = this.mesh(new THREE.BoxGeometry(0.05, 0.2, 0.014), sm, spine, 0.16 * b + bl + t * 0.02, -0.11, 0.09 * b, false);
+        tail.rotation.set(0.12, -0.5, t * 0.12);
+      }
+    } else if (!bare) {
+      const belt = this.mat(0x3a2414);
+      belt.side = THREE.DoubleSide;
+      this.mesh(shell([[-0.035, 0.188 * b + bl, 0.15 * b + bl2], [0.035, 0.186 * b + bl, 0.148 * b + bl2]]), belt, spine, 0, 0, 0, false);
+      this.mesh(new THREE.BoxGeometry(0.07, 0.06, 0.02), this.mat(0xd8b04a), spine, 0, 0, 0.15 * b + bl2, false);
     }
     if (L.armor) {
       const am = this.mat(L.armor);
       for (const s of [-1, 1]) {
-        const pad = this.mesh(new THREE.SphereGeometry(0.13, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), am, chest, s * 0.26 * b, 0.08, 0);
+        const pad = this.mesh(new THREE.SphereGeometry(0.13, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), am, chest, s * 0.26 * b, 0.08, 0);
         pad.scale.set(1.2, 0.9, 1.1);
         pad.rotation.z = -s * 0.5;
       }
-      const plate = this.mesh(new THREE.BoxGeometry(0.4 * b, 0.32, 0.08), am, chest, 0, 0, 0.14 * b);
-      plate.rotation.x = -0.1;
+      const plate = this.mesh(shell([[-0.14, 0.2 * b, 0.158 * b], [-0.02, 0.222 * b, 0.168 * b], [0.1, 0.236 * b, 0.16 * b], [0.16, 0.21 * b, 0.138 * b]], () => 1.75, 20), am, chest);
+      plate.rotation.y = Math.PI;
     }
     if (L.cape) {
-      const cape = new THREE.Mesh(new THREE.PlaneGeometry(0.62 * b, 1.15, 1, 4), new THREE.MeshToonMaterial({ color: new THREE.Color(L.cape as any), gradientMap: toonGradient(), side: THREE.DoubleSide }));
-      cape.geometry.translate(0, -0.55, 0);
-      cape.position.set(0, 0.14, -0.17 * b);
-      cape.rotation.x = 0.12;
+      const cm = new THREE.MeshToonMaterial({ color: new THREE.Color(L.cape as any), gradientMap: toonGradient(), side: THREE.DoubleSide });
+      this.mats.push(cm);
+      const cape = new THREE.Mesh(shell([[-1.05, 0.36 * b, 0.33 * b], [-0.6, 0.31 * b, 0.27 * b], [-0.2, 0.27 * b, 0.2 * b], [0.08, 0.275 * b, 0.17 * b], [0.16, 0.23 * b, 0.145 * b], [0.21, 0.15 * b, 0.11 * b]], (y) => 0.75 + clamp(-y, 0, 1) * 0.25, 30), cm);
       cape.castShadow = true;
-      chest.add(cape);
       cape.name = 'cape';
+      chest.add(cape);
     }
 
-    // Head.
-    const headM = this.mesh(new THREE.SphereGeometry(0.19, 18, 14), skin, head, 0, 0.17, 0);
-    headM.scale.set(1, 1.08, 1);
-    this.mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.12, 8), skin, neck, 0, 0.0, 0, false);
-    // Face.
-    const eyeWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const eyeCol = new THREE.MeshBasicMaterial({ color: L.eyeGlow ?? 0x1a1410 });
-    this.eyeMats.push(eyeCol);
+    // Neck and head.
+    this.mesh(new THREE.CylinderGeometry(0.052 * sb, 0.06 * sb, 0.14, 10), skin, neck, 0, 0.01, 0, false);
+    const style = L.face ?? (L.build && L.build >= 1.4 || belly > 0.3 ? 'brute' : L.beard && L.hairStyle === 'bald' ? 'elder' : 'grunt');
+    const jaw = { hero: 1, fem: 1.05, grunt: 0.8, brute: 0.4, elder: 0.7 }[style];
+    const R = 0.19;
+    const hp = new THREE.Group();
+    hp.position.set(0, 0.155, 0);
+    hp.scale.set(1, 1.06, 1);
+    head.add(hp);
+    // Slightly oversized heads read better at gameplay distance (anime proportions).
+    head.scale.setScalar(style === 'brute' ? 1.04 : 1.12);
+    this.mesh(headGeometry(R, jaw), skin, hp);
+    const hairHex = '#' + new THREE.Color(L.hair as any).getHexString();
+    this.faceOpts = {
+      style, iris: L.iris ?? (style === 'hero' ? '#5a3a24' : '#3a2a20'), brow: '#' + new THREE.Color(hairHex).multiplyScalar(0.75).getHexString(),
+      skin: '#' + new THREE.Color(L.skin as any).getHexString(), scar: !!L.scar, glow: L.eyeGlow ? '#' + new THREE.Color(L.eyeGlow).getHexString() : null,
+    };
+    this.faceMat = new THREE.MeshToonMaterial({ gradientMap: toonGradient(), transparent: true, alphaTest: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    this.paintFace();
+    const face = new THREE.Mesh(faceGeometry(R, jaw), this.faceMat);
+    face.renderOrder = 1;
+    hp.add(face);
     for (const s of [-1, 1]) {
-      const e = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 8), eyeCol);
-      e.position.set(s * 0.068, 0.19, 0.172);
-      e.scale.set(0.85, 1.25, 0.5);
-      head.add(e);
-      const hl = new THREE.Mesh(new THREE.SphereGeometry(0.01, 6, 6), eyeWhite);
-      hl.position.set(s * 0.068 + 0.008, 0.2, 0.188);
-      head.add(hl);
-      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.012, 0.01), new THREE.MeshBasicMaterial({ color: new THREE.Color(L.hair as any).multiplyScalar(0.7) }));
-      brow.position.set(s * 0.07, 0.245, 0.175);
-      brow.rotation.z = s * -0.15;
-      head.add(brow);
+      const ep = headPoint(1.62, s * 1.5, R, jaw);
+      const ear = this.mesh(new THREE.SphereGeometry(0.042, 8, 6), skin, hp, ep.x * 0.97, ep.y, ep.z - 0.005);
+      ear.scale.set(0.45, 0.85, 0.62);
     }
-    this.mouth = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.012, 0.01), new THREE.MeshBasicMaterial({ color: 0x5a2a20 }));
-    this.mouth.position.set(0, 0.095, 0.178);
-    head.add(this.mouth);
-    if (L.scar) {
-      const scar = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.006, 0.01), new THREE.MeshBasicMaterial({ color: 0x9a2a2a }));
-      scar.position.set(-0.07, 0.15, 0.178);
-      head.add(scar);
-      for (const dx of [-0.012, 0, 0.012]) {
-        const st = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.016, 0.01), scar.material);
-        st.position.set(-0.07 + dx, 0.15, 0.179);
-        head.add(st);
-      }
-    }
-    if (L.beard) {
-      const bm = this.mat(L.beard);
-      const beard = this.mesh(new THREE.ConeGeometry(0.15, 0.3, 10), bm, head, 0, 0.0, 0.08);
-      beard.rotation.x = Math.PI + 0.25;
-    }
-    this.buildHair(head, hairM);
+    const covered = L.hat !== 'none' && L.hat !== 'straw' && L.hat !== 'tricorn' && L.hat !== 'crown' && L.hat !== 'navy';
+    const hair = hairGeometry(covered ? 'bald' : L.hairStyle, R, jaw, L.hat !== 'none');
+    if (hair.cap.attributes.position) this.mesh(hair.cap, hairM, hp);
+    if (hair.clumps) this.mesh(hair.clumps, hairM, hp);
+    if (L.beard) this.mesh(beardGeometry(R, jaw, b > 1.2), this.mat(L.beard), hp);
     this.buildHat(head);
 
     // Arms.
-    const armR = (side: 1 | -1) => {
+    const arm = (side: 1 | -1) => {
       const sh = g(side === 1 ? 'shL' : 'shR', chest, side * 0.25 * b, 0.07, 0);
-      const up = this.mesh(capsule(0.062 * Math.sqrt(b), 0.22), L.vest ? skin : shirt, sh, 0, -0.14, 0);
-      up.scale.set(1, 1, 1);
+      // The upper arm's rounded top doubles as the deltoid, tucked into the torso.
+      this.mesh(capsule(0.067 * sb, 0.2), torsoMat, sh, -side * 0.006, -0.125, 0);
+      if (!bare && !L.armor) this.mesh(new THREE.CylinderGeometry(0.074 * sb, 0.078 * sb, 0.05, 12), shirt, sh, 0, -0.2, 0, false);
       const el = g(side === 1 ? 'elL' : 'elR', sh, 0, -0.29, 0);
-      this.mesh(capsule(0.055 * Math.sqrt(b), 0.2), skin, el, 0, -0.13, 0);
+      this.mesh(capsule(0.057 * sb, 0.19), skin, el, 0, -0.13, 0);
       const ha = g(side === 1 ? 'haL' : 'haR', el, 0, -0.28, 0);
-      const fist = this.mesh(new THREE.SphereGeometry(0.068 * Math.sqrt(b), 10, 8), skin, ha, 0, -0.02, 0.01);
-      fist.scale.set(1, 1.1, 1.15);
+      this.mesh(fistGeometry(1.05 * sb, side), skin, ha, 0, 0, 0);
       return sh;
     };
-    armR(1);
-    this.armR = armR(-1);
+    arm(1);
+    this.armR = arm(-1);
     // Legs.
     const leg = (side: 1 | -1) => {
-      const hi = g(side === 1 ? 'hiL' : 'hiR', hips, side * 0.11 * b, -0.02, 0);
-      const th = this.mesh(capsule(0.085 * Math.sqrt(b), 0.28), pants, hi, 0, -0.22, 0);
-      th.scale.set(1, 1, 1);
+      const hi = g(side === 1 ? 'hiL' : 'hiR', hips, side * 0.1 * b, -0.02, 0);
+      this.mesh(capsule(0.09 * sb, 0.27), pants, hi, 0, -0.21, 0);
       const kn = g(side === 1 ? 'knL' : 'knR', hi, 0, -0.44, 0);
-      this.mesh(capsule(0.07 * Math.sqrt(b), 0.28), L.vest || L.hat === 'straw' ? skin : pants, kn, 0, -0.2, 0);
+      if (shorts) {
+        this.mesh(new THREE.CylinderGeometry(0.1 * sb, 0.106 * sb, 0.08, 12), pants, kn, 0, 0.01, 0);
+        this.mesh(capsule(0.066 * sb, 0.27), skin, kn, 0, -0.2, 0);
+      } else {
+        this.mesh(capsule(0.075 * sb, 0.27), pants, kn, 0, -0.2, 0);
+        this.mesh(new THREE.CylinderGeometry(0.08 * sb, 0.072 * sb, 0.2, 12), shoes, kn, 0, -0.33, 0);
+      }
       const ft = g(side === 1 ? 'ftL' : 'ftR', kn, 0, -0.43, 0);
-      const shoe = this.mesh(new THREE.BoxGeometry(0.12, 0.08, 0.24), shoes, ft, 0, -0.03, 0.05);
-      shoe.scale.set(Math.sqrt(b), 1, 1);
-      if (L.hat === 'straw') {
-        // Rolled-up shorts cuff.
-        this.mesh(new THREE.CylinderGeometry(0.095, 0.1, 0.07, 10), pants, kn, 0, 0.0, 0);
+      if (sandals) {
+        const foot = this.mesh(capsule(0.042, 0.12), skin, ft, 0, -0.03, 0.05, false);
+        foot.rotation.x = Math.PI / 2;
+        this.mesh(new THREE.BoxGeometry(0.105, 0.024, 0.25), shoes, ft, 0, -0.068, 0.05);
+        this.mesh(new THREE.BoxGeometry(0.1, 0.02, 0.03), shoes, ft, 0, -0.02, 0.08, false);
+      } else {
+        const boot = this.mesh(capsule(0.058 * sb, 0.12), shoes, ft, 0, -0.025, 0.055);
+        boot.rotation.x = Math.PI / 2;
+        this.mesh(new THREE.BoxGeometry(0.125 * sb, 0.028, 0.26), this.mat(0x1e140e), ft, 0, -0.068, 0.055, false);
       }
     };
     leg(1);
@@ -440,36 +479,27 @@ export class Humanoid {
     this.attachWeapons();
   }
 
-  private buildHair(head: THREE.Group, m: THREE.Material) {
-    const st = this.look.hairStyle;
-    if (st === 'bald') return;
-    const cap = this.mesh(new THREE.SphereGeometry(0.2, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), m, head, 0, 0.19, -0.01);
-    cap.scale.set(1.04, 1.1, 1.06);
-    const cone = (x: number, y: number, z: number, rx: number, rz: number, r = 0.06, h = 0.16) => {
-      const c = this.mesh(new THREE.ConeGeometry(r, h, 6), m, head, x, y, z, false);
-      c.rotation.set(rx, 0, rz);
-    };
-    if (st === 'spiky' || st === 'wild') {
-      const n = st === 'wild' ? 14 : 10;
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2;
-        cone(Math.cos(a) * 0.12, 0.33 + Math.random() * 0.03, Math.sin(a) * 0.12 - 0.02, Math.sin(a) * 1.0, -Math.cos(a) * 1.0, 0.07, st === 'wild' ? 0.26 : 0.2);
-      }
-      cone(0, 0.4, -0.03, -0.2, 0, 0.07, 0.2);
+  /** (Re)paint the face atlas, e.g. when the eyes start to glow on awakening. */
+  private paintFace() {
+    const f = faceAtlas(this.faceOpts);
+    this.faceMat.map?.dispose();
+    this.faceMat.emissiveMap?.dispose();
+    this.faceMat.map = atlasView(f.map);
+    if (f.emissive) {
+      this.faceMat.emissiveMap = atlasView(f.emissive);
+      this.faceMat.emissive.set(this.faceOpts.glow!).multiplyScalar(1.6);
+    } else {
+      this.faceMat.emissiveMap = null;
+      this.faceMat.emissive.setRGB(0, 0, 0);
     }
-    if (st === 'messy' || st === 'spiky') {
-      for (let i = 0; i < 5; i++) cone(-0.12 + i * 0.06, 0.28, 0.15, 2.3, (i - 2) * 0.2, 0.045, 0.13);
-      for (const s of [-1, 1]) cone(s * 0.19, 0.2, 0.02, 0.3, s * 2.6, 0.05, 0.14);
-      for (let i = 0; i < 4; i++) cone(-0.09 + i * 0.06, 0.2, -0.17, -2.4, 0, 0.05, 0.14);
-    }
-    if (st === 'long') {
-      const back = this.mesh(new THREE.BoxGeometry(0.34, 0.42, 0.1), m, head, 0, 0.04, -0.15);
-      back.rotation.x = 0.1;
-      for (let i = 0; i < 5; i++) cone(-0.12 + i * 0.06, 0.28, 0.15, 2.3, (i - 2) * 0.15, 0.045, 0.12);
-    }
-    if (st === 'topknot') {
-      this.mesh(new THREE.SphereGeometry(0.08, 10, 8), m, head, 0, 0.42, -0.05);
-    }
+    this.faceMat.needsUpdate = true;
+    this.setExpr(this.exprCur);
+  }
+
+  private setExpr(e: Expr) {
+    this.exprCur = e;
+    setAtlasCell(this.faceMat.map!, EXPR[e]);
+    if (this.faceMat.emissiveMap) setAtlasCell(this.faceMat.emissiveMap, EXPR[e]);
   }
 
   private buildHat(head: THREE.Group) {
@@ -478,6 +508,7 @@ export class Humanoid {
     switch (L.hat) {
       case 'straw': {
         const m = this.mat(hc);
+        m.map = strawTexture();
         const brim = this.mesh(new THREE.CylinderGeometry(0.4, 0.42, 0.025, 24), m, head, 0, 0.31, 0);
         brim.rotation.x = -0.12;
         const crown = this.mesh(new THREE.CylinderGeometry(0.19, 0.21, 0.14, 18), m, head, 0, 0.39, -0.01);
@@ -488,7 +519,7 @@ export class Humanoid {
       }
       case 'bandana': {
         const m = this.mat(hc);
-        const c = this.mesh(new THREE.SphereGeometry(0.205, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), m, head, 0, 0.2, -0.01);
+        const c = this.mesh(new THREE.SphereGeometry(0.218, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), m, head, 0, 0.19, -0.01);
         c.scale.set(1.04, 1.0, 1.06);
         for (const s of [-1, 1]) {
           const tail = this.mesh(new THREE.BoxGeometry(0.05, 0.16, 0.02), m, head, s * 0.04, 0.14, -0.21);
@@ -501,13 +532,13 @@ export class Humanoid {
         const brim = this.mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.04, 3), m, head, 0, 0.33, 0);
         brim.rotation.y = Math.PI / 6 + Math.PI;
         this.mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.16, 14), m, head, 0, 0.42, 0);
-        this.mesh(new THREE.SphereGeometry(0.035, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }), head, 0, 0.42, 0.19, false);
+        this.mesh(new THREE.SphereGeometry(0.026, 8, 6), this.mat(0xf2ede4), head, 0, 0.43, 0.185, false);
         break;
       }
       case 'helmet':
       case 'horns': {
         const m = this.mat(L.hat === 'horns' ? 0x3a3a3a : hc);
-        const c = this.mesh(new THREE.SphereGeometry(0.22, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), m, head, 0, 0.19, 0);
+        const c = this.mesh(new THREE.SphereGeometry(0.232, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), m, head, 0, 0.18, 0);
         c.scale.set(1.02, 1.05, 1.05);
         if (L.hat === 'horns') for (const s of [-1, 1]) {
           const h = this.mesh(new THREE.ConeGeometry(0.06, 0.35, 8), this.mat(0xe8dcc0), head, s * 0.2, 0.42, 0);
@@ -543,7 +574,7 @@ export class Humanoid {
       }
       case 'hood': {
         const m = this.mat(hc);
-        const c = this.mesh(new THREE.SphereGeometry(0.24, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), m, head, 0, 0.16, -0.03);
+        const c = this.mesh(new THREE.SphereGeometry(0.25, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), m, head, 0, 0.15, -0.03);
         c.scale.set(1, 1.1, 1.1);
         break;
       }
@@ -655,7 +686,7 @@ export class Humanoid {
   }
 
   setHairColor(c: number) { this.hairMat.color.setHex(c); }
-  setEyeGlow(c: number) { for (const e of this.eyeMats) e.color.setHex(c); }
+  setEyeGlow(c: number) { this.faceOpts = { ...this.faceOpts, glow: '#' + new THREE.Color(c).getHexString() }; this.paintFace(); }
 
   setAura(color: number | null) {
     if (color === null) { if (this.aura) { this.root.remove(this.aura); this.aura = null; } return; }
@@ -691,6 +722,7 @@ export class Humanoid {
       target.hiL = [0.2, 0, 0.2]; target.hiR = [0.1, 0, -0.15]; target.knL = [0.5 * k, 0, 0];
       target.neck = [-0.3 * k, 0.4 * k, 0];
       bodyY = -0.8 * k;
+      if (this.exprCur !== 'ko') this.setExpr('ko');
       this.apply(target, bodyY, 0, dt, 14);
       return;
     }
@@ -759,10 +791,21 @@ export class Humanoid {
       sharp = 30;
     }
     this.apply(target, bodyY, spin, dt, sharp);
-    // Mouth: open during attacks.
-    this.mouth.scale.y = s.action ? 3.5 : 1;
+    this.updateFace(dt, s);
     const cape = this.j.chest.getObjectByName('cape');
     if (cape) cape.rotation.x = 0.12 + moveK * 0.5 + Math.sin(t * 6) * 0.05 * (0.3 + moveK);
+  }
+
+  private updateFace(dt: number, s: AnimInput) {
+    let e: Expr = 'neutral';
+    this.blinkT -= dt;
+    if (this.blinkT < -0.13) this.blinkT = 1.8 + Math.random() * 3.5;
+    if (this.expr) e = this.expr;
+    else if (s.stun || this.flashT > 0) e = 'pain';
+    else if (s.action) e = EXPR_FOR[s.action] ?? (s.actionT > 0.12 && s.actionT < 0.8 ? 'shout' : 'angry');
+    else if (s.speed > 7) e = 'focus';
+    else if (this.blinkT < 0) e = 'blink';
+    if (e !== this.exprCur) this.setExpr(e);
   }
 
   private apply(target: Record<string, [number, number, number]>, bodyY: number, spin: number, dt: number, sharp: number) {

@@ -6,7 +6,7 @@ import { Noise2D } from '../core/noise';
 import { clamp, lerp, rng, smoothstep } from '../core/math';
 import * as P from './props';
 import { GeoBatch, mat } from './props';
-import { lavaMaterial, propMaterial, sharedUniforms } from './materials';
+import { lavaMaterial, propMaterial, sharedUniforms, terrainMaterial } from './materials';
 
 export interface Collider { x: number; z: number; r: number }
 export interface ChestSpot { id: string; pos: THREE.Vector3; rotY: number; tier: number }
@@ -15,7 +15,7 @@ export interface NpcSpot { pos: THREE.Vector3; rotY: number; role: 'villager' | 
 interface Zone { x: number; z: number; r: number; blend: number; h: number }
 interface Seg { ax: number; az: number; bx: number; bz: number }
 
-const terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+const terrainMat = terrainMaterial();
 const staticMat = propMaterial(0);
 const swayMat = propMaterial(0.11);
 const grassMat = propMaterial(0.9);
@@ -61,6 +61,9 @@ export class Island {
   private batch = new GeoBatch();
   private glowBatch = new GeoBatch();
   decoVisible = true;
+  /** Height (R) and grass coverage (G) per grid vertex, sampled by the grass shader. */
+  grassTex: THREE.DataTexture | null = null;
+  grassColors: [THREE.Color, THREE.Color] = [new THREE.Color(), new THREE.Color()];
 
   constructor(def: IslandDef) {
     this.def = def;
@@ -81,6 +84,7 @@ export class Island {
     this.buildPier();
     this.buildStyle();
     this.scatterVegetation();
+    this.buildGrassMap();
     this.placeChests();
     this.finalizeProps();
     this.group.add(this.decoGroup);
@@ -605,14 +609,14 @@ export class Island {
     const dx = Math.cos(dd), dz = Math.sin(dd);
     const base = this.pierStart.clone().addScaledVector(new THREE.Vector3(dx, 0, dz), -26);
     // Village houses in a crescent behind the pier.
-    const wallCols = [0xf2ece0, 0xf6e2c4, 0xe8f0f6, 0xf8e6e6];
-    const roofCols = [0xc24a3a, 0x3a6ac2, 0x3a9a5a, 0xd88a2a];
+    const wallCols = [0xf6efe0, 0xf4dcc0, 0xdfeaf1, 0xf6eab8, 0xf8e4e0];
+    const roofCols = [0xc4502e, 0x3d6fb6, 0x3f8f58, 0xd98a2b, 0x8a4a7a];
     for (let i = 0; i < 9; i++) {
       const a = dd + Math.PI + (i - 4) * 0.32;
       const d = 30 + (i % 2) * 18;
       const x = base.x + Math.cos(a) * d, z = base.z + Math.sin(a) * d;
       if (this.distToPath(x - this.cx, z - this.cz) < 6) continue;
-      this.place(x, z, -a + Math.PI / 2 + Math.PI, (b) => P.house(b, wallCols[i % 4], roofCols[i % 4]), 4.2);
+      this.place(x, z, -a + Math.PI / 2 + Math.PI, (b) => P.house(b, wallCols[i % 5], roofCols[(i * 3) % 5], i), 4.6);
     }
     // Windmills on the hills.
     for (let i = 0; i < 3; i++) {
@@ -978,6 +982,39 @@ export class Island {
       im.computeBoundingSphere();
       this.decoGroup.add(im);
     }
+  }
+
+  private buildGrassMap() {
+    const style = this.def.style;
+    if (style === 'volcano' || style === 'snow' || style === 'desert') return;
+    const N = this.N, W = N + 1;
+    const t = this.def.theme;
+    this.grassColors[0].setHex(t.grass);
+    this.grassColors[1].setHex(t.grass2);
+    const data = new Uint16Array(W * W * 4);
+    const h = this.heights;
+    for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+      const k = j * W + i;
+      const y = h[k];
+      const lx = i * this.cell - this.half, lz = j * this.cell - this.half;
+      let m = 0;
+      if (y > 1.6 && i > 0 && j > 0 && i < N && j < N) {
+        const dx = h[k + 1] - h[k - 1], dz = h[k + W] - h[k - W];
+        const ny = 2 * this.cell / Math.hypot(dx, 2 * this.cell, dz);
+        m = smoothstep(0.78, 0.9, ny) * smoothstep(2.6, 4.5, this.distToPath(lx, lz));
+        if (m > 0 && this.inZone(lx, lz, 1)) m = 0;
+        if (m > 0 && this.arena && Math.hypot(lx + this.cx - this.arena.pos.x, lz + this.cz - this.arena.pos.z) < this.arena.radius + 2) m = 0;
+        if (m > 0 && this.blocked(lx + this.cx, lz + this.cz, 0)) m = 0;
+        if (m > 0 && y > this.def.height * 0.75 && style !== 'final') m *= 0.4;
+      }
+      data[k * 4] = THREE.DataUtils.toHalfFloat(y);
+      data[k * 4 + 1] = THREE.DataUtils.toHalfFloat(m);
+    }
+    const tex = new THREE.DataTexture(data, W, W, THREE.RGBAFormat, THREE.HalfFloatType);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    this.grassTex = tex;
   }
 
   private scatterFloes() {

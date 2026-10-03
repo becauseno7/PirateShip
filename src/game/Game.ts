@@ -15,6 +15,7 @@ import { Combat } from '../combat/Combat';
 import { Environment } from '../world/Environment';
 import { Ocean } from '../world/Ocean';
 import { World } from '../world/World';
+import { Grass } from '../world/Grass';
 import type { Island, NpcSpot } from '../world/Island';
 import { sharedUniforms } from '../world/materials';
 import { Player } from '../entities/Player';
@@ -45,6 +46,7 @@ const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 export class Game {
   state: State = 'loading';
   renderer!: THREE.WebGLRenderer;
+  grass!: Grass;
   composer: EffectComposer | null = null;
   bloom: UnrealBloomPass | null = null;
   menus!: Menus;
@@ -80,8 +82,9 @@ export class Game {
     r.setSize(window.innerWidth, window.innerHeight);
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFShadowMap;
-    r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 1.0;
+    // Neutral tone mapping keeps the saturated, anime-like palette that ACES washes out.
+    r.toneMapping = THREE.NeutralToneMapping;
+    r.toneMappingExposure = 0.92;
     r.outputColorSpace = THREE.SRGBColorSpace;
     app.appendChild(r.domElement);
     this.renderer = r;
@@ -109,6 +112,7 @@ export class Game {
     ctx.scene.add(ctx.ocean.mesh);
     ctx.env = new Environment(ctx.scene);
     ctx.world = new World(ctx.scene);
+    this.grass = new Grass(ctx.scene);
     ctx.cam = new CameraRig(ctx.camera);
     await ctx.world.generate((f, label) => ctx.ui.loading(0.05 + f * 0.8, label));
     ctx.ui.loading(0.88, 'Painting the sea charts...');
@@ -182,6 +186,7 @@ export class Game {
     this.renderer.setPixelRatio(pr);
     this.renderer.shadowMap.enabled = s.quality !== 'low';
     ctx.env.setQuality(s.quality);
+    this.grass?.setQuality(s.quality);
     this.resize();
   }
 
@@ -620,9 +625,15 @@ export class Game {
       console.error(e);
     }
     ctx.input.endFrame();
+    if (this.debugCam) { ctx.camera.position.copy(this.debugCam.pos); ctx.camera.lookAt(this.debugCam.look); ctx.camera.fov = this.debugCam.fov; ctx.camera.updateProjectionMatrix(); }
+    const cp = ctx.camera.position;
+    this.grass.update(ctx.camera, ctx.world.islandAt(cp.x, cp.z, 80));
     if (this.composer && ctx.settings.quality !== 'low') this.composer.render(real);
     else this.renderer.render(ctx.scene, ctx.camera);
   };
+
+  /** Test hook: pin the camera for screenshots. */
+  debugCam: { pos: THREE.Vector3; look: THREE.Vector3; fov: number } | null = null;
 
   /** Test hook: advance the simulation without rendering. */
   debugAdvance(sec: number, step = 1 / 30) {
@@ -1560,8 +1571,9 @@ export class Game {
 }
 
 // Debug hooks for testing in the browser console.
-declare global { interface Window { __game: Game; __ctx: typeof ctx } }
+declare global { interface Window { __game: Game; __ctx: typeof ctx; __mods: Record<string, unknown> } }
 export function exposeDebug(g: Game) {
   window.__game = g;
   window.__ctx = ctx;
+  window.__mods = { THREE, Humanoid, factionLook, BOSSES };
 }

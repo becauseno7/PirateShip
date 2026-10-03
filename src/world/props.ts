@@ -20,7 +20,19 @@ const UNIT = {
   dodec: new THREE.DodecahedronGeometry(1, 0),
   octa: new THREE.OctahedronGeometry(1, 0),
   torus: new THREE.TorusGeometry(1, 0.12, 6, 24).toNonIndexed(),
+  prism: unitPrism(),
 };
+
+/** Triangular prism: base spans z in [-0.5, 0.5] at y=0, apex at y=1, length along x in [-0.5, 0.5]. */
+function unitPrism() {
+  const A = [-0.5, 0, -0.5], B = [-0.5, 0, 0.5], C = [-0.5, 1, 0];
+  const D = [0.5, 0, -0.5], E = [0.5, 0, 0.5], F = [0.5, 1, 0];
+  const tris = [A, C, B, D, E, F, A, B, E, A, E, D, B, C, F, B, F, E, A, D, F, A, F, C];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(tris.flat(), 3));
+  g.computeVertexNormals();
+  return g;
+}
 for (const g of Object.values(UNIT)) if (g.attributes.uv) g.deleteAttribute('uv');
 
 export type UnitShape = keyof typeof UNIT;
@@ -62,6 +74,15 @@ export class GeoBatch {
       cols[i * 3 + 2] = Math.max(0, _c.b * (1 + j + vj));
     }
     g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    this.parts.push(g);
+    return g;
+  }
+
+  /** Add a geometry that already carries its own vertex colors. */
+  addRaw(geo: THREE.BufferGeometry, local = new THREE.Matrix4()) {
+    const g = geo.index ? geo.toNonIndexed() : geo.clone();
+    if (g.attributes.uv) g.deleteAttribute('uv');
+    g.applyMatrix4(_m.copy(this.top).multiply(local));
     this.parts.push(g);
     return g;
   }
@@ -121,51 +142,113 @@ export function lumpy(geo: THREE.BufferGeometry, amount: number, seed = 1) {
 }
 
 // ---------------------------------------------------------------- vegetation
+/**
+ * A soft canopy: overlapping blobs whose normals bend away from the canopy centre (so the
+ * whole crown shades as one puffy mass) and whose colour brightens toward the sun-lit top.
+ */
+const ICO2 = new THREE.IcosahedronGeometry(1, 2);
+
+export function canopy(blobs: [number, number, number, number][], color: number, center: THREE.Vector3, opts: { warm?: number; detail?: 1 | 2; squash?: number } = {}) {
+  const b = new GeoBatch();
+  b.jitter = 0.16;
+  const geo = opts.detail === 1 ? UNIT.ico1 : ICO2;
+  for (const [x, y, z, r] of blobs) b.addGeo(lumpy(geo, 0.14, x * 3.1 + z), color, mat(x, y, z, 0, x + z, 0, r, r * (opts.squash ?? 0.86), r));
+  const g = b.merge();
+  const p = g.attributes.position as THREE.BufferAttribute, n = g.attributes.normal as THREE.BufferAttribute, c = g.attributes.color as THREE.BufferAttribute;
+  g.computeBoundingBox();
+  const y0 = g.boundingBox!.min.y, y1 = g.boundingBox!.max.y;
+  const v = new THREE.Vector3(), nn = new THREE.Vector3();
+  const warm = opts.warm ?? 0.08;
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).sub(center).normalize();
+    nn.fromBufferAttribute(n, i).lerp(v, 0.9).normalize();
+    n.setXYZ(i, nn.x, nn.y, nn.z);
+    const t = (p.getY(i) - y0) / Math.max(0.001, y1 - y0);
+    const k = 0.56 + t * 0.66;
+    c.setXYZ(i, c.getX(i) * k * (1 + t * warm), c.getY(i) * k * (1 + t * warm * 0.6), c.getZ(i) * k * (1 - t * warm));
+  }
+  return g;
+}
+
+/** One palm frond: an arched, V-folded leaf strip with a darker base. */
+function palmFrond(len: number, width: number, droop: number, color: number) {
+  const segs = 9;
+  const pos: number[] = [], col: number[] = [];
+  const base = new THREE.Color(color), tip = base.clone().multiplyScalar(1.18), dark = base.clone().multiplyScalar(0.62);
+  const pt = (t: number, side: number): [number, number, number] => {
+    const along = t * len;
+    const y = Math.sin(t * Math.PI * 0.55) * len * 0.28 - t * t * droop * len;
+    const w = width * Math.sin(Math.min(1, t * 1.15) * Math.PI) * (t < 0.08 ? 0.3 : 1);
+    return [side * w, y - Math.abs(side) * w * 0.35, along];
+  };
+  for (let i = 0; i < segs; i++) {
+    const t0 = i / segs, t1 = (i + 1) / segs;
+    const c0 = dark.clone().lerp(base, Math.min(1, t0 * 2.5)).lerp(tip, Math.max(0, t0 - 0.5) * 2);
+    const c1 = dark.clone().lerp(base, Math.min(1, t1 * 2.5)).lerp(tip, Math.max(0, t1 - 0.5) * 2);
+    for (const side of [-1, 1]) {
+      const a = pt(t0, 0), b2 = pt(t1, 0), c2 = pt(t1, side), d = pt(t0, side);
+      const quad = side > 0 ? [a, b2, c2, a, c2, d] : [a, c2, b2, a, d, c2];
+      const cols = side > 0 ? [c0, c1, c1, c0, c1, c0] : [c0, c1, c1, c0, c0, c1];
+      quad.forEach((q) => pos.push(...q));
+      cols.forEach((cc) => col.push(cc.r, cc.g, cc.b));
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 export function palmTree(): THREE.BufferGeometry {
   const b = new GeoBatch();
-  const segs = 8;
+  const segs = 9;
   let x = 0, y = 0, ang = 0;
   for (let i = 0; i < segs; i++) {
-    const len = 1.15;
-    const r = 0.34 - i * 0.018;
-    b.addGeo(new THREE.CylinderGeometry(r * 0.92, r, len, 7), i % 2 ? 0x8a6a45 : 0x7a5a38,
+    const len = 1.05;
+    const r = 0.36 - i * 0.02;
+    b.addGeo(new THREE.CylinderGeometry(r * 0.86, r, len, 8), i % 2 ? 0x9a7a52 : 0x7d5d3a,
       mat(x + Math.sin(ang) * len / 2, y + Math.cos(ang) * len / 2, 0, 0, 0, -ang));
+    b.addGeo(UNIT.torus, 0x6e5232, mat(x, y + 0.02, 0, Math.PI / 2, 0, -ang, r * 0.98, r * 0.98, r * 1.4));
     x += Math.sin(ang) * len;
     y += Math.cos(ang) * len;
-    ang += 0.055;
+    ang += 0.06;
   }
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2 + 0.2;
-    const droop = 0.55 + (i % 3) * 0.18;
-    const m = mat(x, y, 0, 0, a, 0)
-      .multiply(mat(0, 0, 0, Math.PI / 2 + droop, 0, 0))
-      .multiply(mat(0, 1.9, 0, 0, 0, 0, 0.55, 3.8, 0.12));
-    b.addGeo(UNIT.cone4, i % 2 ? 0x3f9e3a : 0x58b842, m.multiply(mat(0, 0, 0, 0, 0, Math.PI)));
+  b.sphere(0.5, x, y, 0, 0x6a5a2a, 1, 0.8, 1);
+  for (let i = 0; i < 13; i++) {
+    const a = (i / 13) * Math.PI * 2 + (i % 2) * 0.15;
+    const tilt = i % 3 === 0 ? -0.15 : 0.2;
+    const f = palmFrond(4.6 + (i % 3) * 0.6, 0.78, 0.7 + (i % 4) * 0.14, i % 2 ? 0x3f9e3a : 0x55b444);
+    b.addRaw(f, mat(x, y + 0.1, 0, tilt, a, 0));
   }
-  for (let i = 0; i < 3; i++) b.sphere(0.22, x + Math.cos(i * 2.1) * 0.3, y - 0.3, Math.sin(i * 2.1) * 0.3, 0x5a3a1c);
+  for (let i = 0; i < 4; i++) b.sphere(0.24, x + Math.cos(i * 1.7) * 0.34, y - 0.38, Math.sin(i * 1.7) * 0.34, 0x5a3a1c);
   return b.merge();
 }
 
+/** Broadleaf tree with a forked trunk and a puffy, sun-warmed crown. */
 export function jungleTree(): THREE.BufferGeometry {
   const b = new GeoBatch();
-  b.taper(0.55, 0.35, 7, 0, 0, 0, 0x6b4b30, 7);
-  b.addGeo(new THREE.CylinderGeometry(0.12, 0.2, 2.5, 5), 0x6b4b30, mat(0.8, 5.5, 0, 0, 0, -0.8));
-  b.ico(3.2, 0, 8.2, 0, 0x2f8a3a, 1, 1.2, 0.8, 1.1);
-  b.ico(2.4, 1.9, 7.2, 0.6, 0x3c9c3e, 1, 1, 0.8, 1);
-  b.ico(2.2, -1.6, 7.4, -0.8, 0x267a33, 1, 1, 0.85, 1);
-  b.ico(2.0, 0.2, 9.6, -0.6, 0x48ab45, 1, 1, 0.8, 1);
+  const bark = 0x6b4b30;
+  b.taper(0.6, 0.34, 5.6, 0, 0, 0, bark, 8);
+  for (let i = 0; i < 3; i++) b.addGeo(new THREE.CylinderGeometry(0.06, 0.32, 1.4, 5), 0x5a3e28, mat(Math.cos(i * 2.1) * 0.5, 0.35, Math.sin(i * 2.1) * 0.5, Math.sin(i * 2.1) * 0.9, 0, -Math.cos(i * 2.1) * 0.9));
+  b.addGeo(new THREE.CylinderGeometry(0.16, 0.3, 3.0, 6), bark, mat(0.9, 6.1, 0.1, 0, 0, -0.55));
+  b.addGeo(new THREE.CylinderGeometry(0.14, 0.26, 2.6, 6), bark, mat(-0.8, 6.0, -0.3, 0.25, 0, 0.6));
+  const c = new THREE.Vector3(0, 8.0, 0);
+  b.addRaw(canopy([[0, 8.4, 0, 2.9], [2.0, 7.6, 0.6, 2.2], [-1.9, 7.7, -0.6, 2.2], [0.6, 7.4, -1.9, 2.0], [-0.5, 7.5, 1.9, 2.0], [0.4, 9.9, 0.2, 2.0], [1.5, 9.2, -0.9, 1.6], [-1.3, 9.3, 0.9, 1.6]], 0x3a9a3e, c, { warm: 0.12 }));
   return b.merge();
 }
 
 export function pineTree(snowy: boolean): THREE.BufferGeometry {
   const b = new GeoBatch();
-  b.taper(0.35, 0.22, 2.6, 0, 0, 0, 0x5a3e2a, 6);
+  b.taper(0.38, 0.2, 3.0, 0, 0, 0, 0x5a3e2a, 7);
   const green = snowy ? 0x2c5a48 : 0x2f6b3a;
-  const tiers: [number, number, number][] = [[2.8, 3.4, 1.8], [2.2, 3.0, 3.6], [1.6, 2.6, 5.3], [1.0, 2.0, 6.8]];
-  for (const [r, h, y] of tiers) {
-    b.cone(r, h, 0, y, 0, green, 8);
-    if (snowy) b.cone(r * 0.75, h * 0.45, 0, y + h * 0.58, 0, 0xf4f8ff, 8);
-  }
+  const tiers: [number, number, number][] = [[3.0, 3.2, 1.6], [2.5, 3.0, 3.1], [2.0, 2.7, 4.6], [1.45, 2.4, 6.0], [0.9, 2.0, 7.3]];
+  tiers.forEach(([r, h, y], i) => {
+    const k = 0.78 + i * 0.07;
+    b.addGeo(lumpy(new THREE.ConeGeometry(r, h, 10, 2, true).translate(0, h / 2, 0), 0.08, i + 1), shade(green, k), mat(0, y, 0, 0, i * 0.7, 0));
+    b.addGeo(new THREE.CircleGeometry(r * 0.98, 10).rotateX(Math.PI / 2), shade(green, 0.55), mat(0, y + 0.02, 0, 0, i * 0.7, 0));
+    if (snowy) b.addGeo(lumpy(new THREE.ConeGeometry(r * 0.78, h * 0.5, 10, 1).translate(0, h * 0.25, 0), 0.1, i + 7), 0xf4f8ff, mat(0, y + h * 0.52, 0, 0, i * 0.7 + 0.3, 0));
+  });
   return b.merge();
 }
 
@@ -197,20 +280,15 @@ export function cactus(): THREE.BufferGeometry {
 
 export function goldenTree(): THREE.BufferGeometry {
   const b = new GeoBatch();
-  b.taper(0.5, 0.3, 6, 0, 0, 0, 0xeae4d8, 7);
-  b.addGeo(new THREE.CylinderGeometry(0.1, 0.18, 2.4, 5), 0xeae4d8, mat(-0.8, 4.8, 0, 0, 0, 0.8));
-  b.ico(3.0, 0, 7.4, 0, 0xffcf3f, 1, 1.2, 0.85, 1.2);
-  b.ico(2.2, 1.8, 6.6, 0.5, 0xffe27a, 1);
-  b.ico(2.0, -1.7, 6.8, -0.5, 0xf5b82e, 1);
-  b.ico(1.6, 0.3, 9.0, 0.2, 0xfff0a8, 1);
+  b.taper(0.5, 0.3, 6, 0, 0, 0, 0xeae4d8, 8);
+  b.addGeo(new THREE.CylinderGeometry(0.1, 0.18, 2.4, 6), 0xeae4d8, mat(-0.8, 4.8, 0, 0, 0, 0.8));
+  b.addRaw(canopy([[0, 7.4, 0, 2.8], [1.8, 6.7, 0.5, 2.1], [-1.7, 6.9, -0.5, 2.0], [0.3, 8.9, 0.2, 1.7], [0.4, 6.6, -1.6, 1.7]], 0xffcf3f, new THREE.Vector3(0, 7.2, 0), { warm: 0.15 }));
   return b.merge();
 }
 
 export function bush(color = 0x3f9a3c): THREE.BufferGeometry {
   const b = new GeoBatch();
-  b.ico(1.1, 0, 0.6, 0, color, 1, 1.2, 0.8, 1.1);
-  b.ico(0.8, 0.8, 0.45, 0.3, color, 1);
-  b.ico(0.75, -0.7, 0.45, -0.2, color, 1);
+  b.addRaw(canopy([[0, 0.65, 0, 1.1], [0.85, 0.45, 0.3, 0.8], [-0.75, 0.45, -0.2, 0.78], [0.1, 0.5, -0.8, 0.7], [-0.2, 1.1, 0.2, 0.7]], color, new THREE.Vector3(0, 0.3, 0), { warm: 0.1 }));
   return b.merge();
 }
 
@@ -264,13 +342,99 @@ export function hut(b: GeoBatch, wall = 0xc9a86a, roof = 0xd8b45a) {
   b.cyl(0.12, 2.6, 2.9, 0, 0.8, 0x7a5a38, 6);
 }
 
-export function house(b: GeoBatch, wall = 0xf2ece0, roof = 0xc24a3a) {
-  b.box(6, 4, 5, 0, 2, 0, wall);
-  b.addGeo(UNIT.cyl6, roof, mat(0, 4.9, 0, 0, 0, Math.PI / 2).multiply(mat(0, 0, 0, Math.PI / 6, 0, 0, 2.2, 6.6, 3.4)));
-  b.box(0.9, 2.3, 1, 1.8, 6.2, -1, 0x8c7a6a);
-  b.box(1.2, 2.2, 0.2, 0, 1.1, 2.55, 0x5a3a22);
-  for (const x of [-1.9, 1.9]) b.box(1, 1, 0.15, x, 2.4, 2.55, 0x2a3a4a);
-  b.box(6.4, 0.3, 5.4, 0, 0.15, 0, 0x8a8278);
+const HOUSE_SHUTTERS = [0x3f7f5a, 0x3d63a8, 0xb8443a, 0xd8a03a, 0x6a4a8a];
+const FLOWER_COLS = [0xff5f8f, 0xffe14a, 0xffffff, 0xff7a3d, 0xc77dff];
+
+function shade(c: number, k: number) { return new THREE.Color(c).multiplyScalar(k).getHex(); }
+
+/** A window with a frame, mullions, open shutters and a flower box. Faces +z at the origin. */
+function houseWindow(b: GeoBatch, x: number, y: number, z: number, ry: number, shutter: number, flowers: boolean, seed: number) {
+  b.push(mat(x, y, z, 0, ry, 0));
+  b.box(1.3, 1.3, 0.14, 0, 0, 0, 0xeee2c8);
+  b.box(1.02, 1.02, 0.1, 0, 0, 0.04, 0x2c4a66);
+  b.box(0.08, 1.02, 0.06, 0, 0, 0.1, 0xeee2c8);
+  b.box(1.02, 0.08, 0.06, 0, 0, 0.1, 0xeee2c8);
+  b.box(0.98, 0.3, 0.04, -0.02, 0.2, 0.08, 0x7fa8c8);
+  for (const s of [-1, 1]) b.box(0.52, 1.24, 0.07, s * 0.98, 0, 0.2, shutter, -s * 0.5);
+  if (flowers) {
+    b.box(1.4, 0.3, 0.42, 0, -0.78, 0.24, 0x7a5232);
+    for (let i = 0; i < 5; i++) {
+      b.sphere(0.16, -0.5 + i * 0.25, -0.55, 0.28 + ((i + seed) % 2) * 0.08, 0x3f8a3a, 1, 0.7, 1);
+      b.sphere(0.1, -0.5 + i * 0.25, -0.45, 0.3 + ((i + seed) % 2) * 0.08, FLOWER_COLS[(i + seed) % FLOWER_COLS.length]);
+    }
+  }
+  b.pop();
+}
+
+/** Half-timbered village house with a tiled gable roof, chimney, shutters and flower boxes. Door faces +z. */
+export function house(b: GeoBatch, wall = 0xf2ece0, roof = 0xc24a3a, seed = 0) {
+  const two = seed % 3 === 1;
+  const w = two ? 7 : 6.6, d = two ? 5.6 : 5.4, h = two ? 6.2 : 3.8;
+  const wood = 0x5a3822, stone = 0x8c8478;
+  const shutter = HOUSE_SHUTTERS[seed % HOUSE_SHUTTERS.length];
+  const y0 = 0.6, top = y0 + h;
+  // Stone plinth with a few proud blocks.
+  b.box(w + 0.5, 0.7, d + 0.5, 0, 0.3, 0, stone);
+  for (let i = 0; i < 7; i++) {
+    const t = i / 6 - 0.5;
+    b.box(0.9, 0.36, 0.2, t * (w - 0.2), 0.26 + (i % 2) * 0.24, d / 2 + 0.28, i % 2 ? 0x9a9286 : 0x7e776c);
+  }
+  // Plastered walls and timber frame.
+  b.box(w, h, d, 0, y0 + h / 2, 0, wall);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.32, h + 0.1, 0.32, sx * w / 2, y0 + h / 2, sz * d / 2, wood);
+  for (const sz of [-1, 1]) { b.box(w + 0.1, 0.26, 0.24, 0, y0 + 0.13, sz * (d / 2 + 0.04), wood); b.box(w + 0.1, 0.3, 0.26, 0, top - 0.15, sz * (d / 2 + 0.04), wood); }
+  for (const sx of [-1, 1]) { b.box(0.24, 0.26, d + 0.1, sx * (w / 2 + 0.04), y0 + 0.13, 0, wood); b.box(0.26, 0.3, d + 0.1, sx * (w / 2 + 0.04), top - 0.15, 0, wood); }
+  if (two) for (const sz of [-1, 1]) b.box(w + 0.1, 0.24, 0.22, 0, y0 + h * 0.5, sz * (d / 2 + 0.05), wood);
+  // Diagonal braces on the gable sides.
+  const braceH = two ? h * 0.5 : h;
+  for (const sx of [-1, 1]) for (const k of [-1, 1]) {
+    const len = Math.hypot(braceH * 0.9, d * 0.32);
+    b.box(0.18, len, 0.18, sx * (w / 2 + 0.06), y0 + braceH * 0.5, k * d * 0.28, wood, 0, k * Math.atan2(d * 0.32, braceH * 0.9) * sx, 0);
+  }
+  // Gable roof (ridge along x) with stepped tile rows, ridge cap and gable ends.
+  const rise = d * 0.45, half = d / 2 + 0.6;
+  const pitch = Math.atan2(rise, d / 2);
+  const slope = Math.hypot(half, rise * (half / (d / 2)));
+  for (const sz of [-1, 1]) {
+    b.push(mat(0, top + rise - rise * half / d + 0.08, sz * half / 2, sz * pitch, 0, 0));
+    b.box(w + 1.1, 0.22, slope, 0, 0, 0, shade(roof, 0.7));
+    const rows = 7;
+    for (let r = 0; r < rows; r++) {
+      const t = (r + 0.5) / rows - 0.5;
+      b.box(w + 1.0, 0.13, slope / rows + 0.08, 0, 0.16, -sz * t * slope, r % 2 ? roof : shade(roof, 0.88));
+    }
+    b.pop();
+  }
+  b.addGeo(UNIT.cyl8, shade(roof, 0.65), mat(0, top + rise + 0.05, 0, 0, 0, Math.PI / 2).multiply(mat(0, 0, 0, 0, 0, 0, 0.2, w + 1.2, 0.2)));
+  for (const sx of [-1, 1]) {
+    b.addGeo(UNIT.prism, wall, mat(sx * (w / 2 - 0.05), top, 0, 0, 0, 0, 0.1, rise, d));
+    b.addGeo(UNIT.prism, wood, mat(sx * (w / 2 + 0.02), top - 0.02, 0, 0, 0, 0, 0.06, rise * 0.25, d * 0.25).premultiply(mat(0, rise * 0.55, 0)));
+    b.cyl(0.38, 0.12, sx * (w / 2 + 0.02), top + rise * 0.38, 0, 0x2c4a66, 12, 0, 0, Math.PI / 2);
+  }
+  // Chimney.
+  b.box(0.9, rise + 1.8, 0.9, w * 0.28, top + (rise + 1.8) / 2 - 0.2, -d * 0.18, 0x9a8f80);
+  b.box(1.1, 0.22, 1.1, w * 0.28, top + rise + 1.6, -d * 0.18, 0x6e665c);
+  // Door with frame, awning, step and a lantern.
+  const dz = d / 2 + 0.06;
+  b.box(1.5, 2.45, 0.16, 0, y0 + 1.2, dz, wood);
+  b.box(1.16, 2.15, 0.14, 0, y0 + 1.08, dz + 0.05, 0x8a5430);
+  for (let i = 0; i < 3; i++) b.box(0.04, 2.0, 0.04, -0.36 + i * 0.36, y0 + 1.08, dz + 0.13, 0x6a3e22);
+  b.sphere(0.06, 0.4, y0 + 1.05, dz + 0.16, 0xe8c45a);
+  b.box(1.9, 0.12, 0.9, 0, y0 + 2.62, dz + 0.42, roof, 0, 0.32);
+  b.box(1.9, 0.22, 1.0, 0, 0.36, dz + 0.55, stone);
+  b.box(0.18, 0.3, 0.18, 1.0, y0 + 2.0, dz + 0.18, 0x2a2a2a);
+  b.box(0.12, 0.18, 0.12, 1.0, y0 + 1.82, dz + 0.18, 0xffd27a);
+  // Windows.
+  const wy = y0 + 1.75;
+  for (const sx of [-1, 1]) houseWindow(b, sx * w * 0.3, wy, dz, 0, shutter, true, seed + (sx > 0 ? 1 : 0));
+  if (two) for (let i = -1; i <= 1; i++) houseWindow(b, i * w * 0.3, y0 + h * 0.5 + 1.5, dz, 0, shutter, i === 0, seed + i + 3);
+  for (const sx of [-1, 1]) houseWindow(b, sx * (w / 2 + 0.06), wy, 0, sx * Math.PI / 2, shutter, false, seed);
+  houseWindow(b, -w * 0.25, wy, -dz, Math.PI, shutter, false, seed);
+  // Yard clutter.
+  if (seed % 2 === 0) { b.cyl(0.42, 0.9, w / 2 + 0.7, 0, d / 2 - 0.2, 0x8a5a32, 12); b.cyl(0.44, 0.08, w / 2 + 0.7, 0.3, d / 2 - 0.2, 0x4a4a4a, 12); b.cyl(0.44, 0.08, w / 2 + 0.7, 0.62, d / 2 - 0.2, 0x4a4a4a, 12); }
+  else { b.box(0.8, 0.8, 0.8, -w / 2 - 0.6, 0.4, d / 2 - 0.4, 0xa8783e, 0.4); b.box(0.6, 0.6, 0.6, -w / 2 - 0.5, 1.1, d / 2 - 0.4, 0xb8884e, 0.9); }
+  b.box(1.8, 0.12, 0.45, -w * 0.3, 0.75, dz + 0.9, 0x8a6038);
+  for (const sx of [-1, 1]) b.box(0.12, 0.45, 0.4, -w * 0.3 + sx * 0.75, 0.5, dz + 0.9, 0x6a4628);
 }
 
 export function windmillBase(b: GeoBatch) {

@@ -363,7 +363,7 @@ export class Kraken extends SeaMonster {
       if (this.grabbing && this.submerged < 0.3) {
         this.slamCd -= dt;
         if (this.slamCd <= 0) {
-          this.slamCd = rand(1.4, 2.4);
+          this.slamCd = rand(2.0, 3.2);
           const free = this.tentacles.filter((x) => x.slamT < 0);
           if (free.length) {
             const tn = free[Math.floor(Math.random() * free.length)];
@@ -399,7 +399,7 @@ export class Kraken extends SeaMonster {
         if (tn.slamT > 1.3 && tn.slamT - dt <= 1.3) {
           ctx.fx.removeTelegraph(tn.tg);
           ctx.combat.sphere(tn.slamAt.clone().add(V(0, 1, 0)), 3.6, { amount: Math.round(24 + this.level * 8), from: tn.slamAt.clone(), team: 'enemy', source: 'enemy', knockback: 10, launch: 5 });
-          if (ship.hitTest(tn.slamAt, 2)) ctx.combat.apply(ship, { amount: Math.round(32 + this.level * 10), from: tn.slamAt.clone(), team: 'enemy', source: 'enemy' });
+          if (ship.hitTest(tn.slamAt, 2)) ctx.combat.apply(ship, { amount: Math.round(20 + this.level * 6), from: tn.slamAt.clone(), team: 'enemy', source: 'enemy' });
           ctx.audio.sfx('explosion', tn.slamAt, 0.6);
           ctx.particles.burst(tn.slamAt, 16, { speed: 6, up: 3, life: 0.6, size: 0.8, sizeEnd: 0.1, color: 0x9a7a5a, gravity: 12 });
           ctx.fx.shake(0.8);

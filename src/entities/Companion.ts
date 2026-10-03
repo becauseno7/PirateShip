@@ -23,7 +23,7 @@ export class Companion extends Fighter {
 
   constructor() {
     super({
-      skin: '#e3b48a', hair: '#3f9a4a', hairStyle: 'spiky', shirt: '#f4f4f0', pants: '#22262e', shoes: '#1a1a1a', hat: 'none',
+      face: 'hero', iris: '#2a3a2a', skin: '#e3b48a', hair: '#3f9a4a', hairStyle: 'spiky', shirt: '#f4f4f0', pants: '#22262e', shoes: '#1a1a1a', hat: 'none',
       sash: '#3f8a4a', weapon: 'katana3', weaponColor: 0xe8eef4, outline: true, build: 1.08,
     }, 'player', 'ally');
     this.hpMax = 300;

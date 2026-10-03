@@ -64,7 +64,7 @@ export const BOSSES: Record<BossId, BossDef> = {
   },
   zahra: {
     id: 'zahra', name: 'Sultana Zahra', title: '"The Mirage Queen"', bounty: 1_400_000_000, style: 'desert',
-    look: { skin: '#b07a4a', hair: '#1a1414', hairStyle: 'long', shirt: '#2a8ab8', pants: '#f0e6d0', hat: 'crown', cape: '#d8b04a', build: 0.95, height: 1.5, weapon: 'scimitar2', weaponColor: 0xffe08a, sash: '#b8322a', outline: true },
+    look: { face: 'fem', iris: '#8a5a20', skin: '#b07a4a', hair: '#1a1414', hairStyle: 'long', shirt: '#2a8ab8', pants: '#f0e6d0', hat: 'crown', cape: '#d8b04a', build: 0.95, height: 1.5, weapon: 'scimitar2', weaponColor: 0xffe08a, sash: '#b8322a', outline: true },
     hp: 11000, dmg: 48, speed: 7.5, color: 0xffc860, color2: 0x2ad1c4, element: 'physical', projectile: 'orb',
     attacks: ['teleport', 'vortex', 'orbs', 'rain', 'charge'], phase2: ['teleport', 'vortex', 'orbs', 'rain', 'charge', 'summon'],
     intro: 'You crossed my desert. Bold. But nothing here is real, captain. Not even your hope.', defeat: 'The sands... are settling... how unbecoming.',

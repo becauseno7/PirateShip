@@ -111,12 +111,14 @@ export class Encounters {
 
   private spawnPoint(minD: number, maxD: number): THREE.Vector3 | null {
     const s = ctx.ship;
-    for (let tries = 0; tries < 16; tries++) {
-      const a = s.heading + rand(-1.3, 1.3) + (chance(0.25) ? Math.PI : 0);
-      const d = rand(minD, maxD);
+    // Prefer open water ahead of the bow; near coastlines fall back to any bearing, a bit further out.
+    for (let tries = 0; tries < 40; tries++) {
+      const wide = tries >= 16;
+      const a = wide ? rand(0, Math.PI * 2) : s.heading + rand(-1.3, 1.3) + (chance(0.25) ? Math.PI : 0);
+      const d = wide ? rand(minD, maxD * 1.6) : rand(minD, maxD);
       const x = s.pos.x + Math.sin(a) * d, z = s.pos.z + Math.cos(a) * d;
       if (ctx.world.terrainHeight(x, z) > -6) continue;
-      if (ctx.world.islandAt(x, z, 150)) continue;
+      if (ctx.world.islandAt(x, z, wide ? 40 : 150)) continue;
       return new THREE.Vector3(x, 0, z);
     }
     return null;

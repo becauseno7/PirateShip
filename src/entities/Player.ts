@@ -13,7 +13,7 @@ import { Humanoid, RigLook } from './Humanoid';
 export function lookToRig(l: Look, outline = true): RigLook {
   return {
     skin: l.skin, hair: l.hair, hairStyle: l.hairStyle, shirt: l.shirt, pants: l.pants, hat: l.hat, hatColor: l.hatColor,
-    scar: l.scar, vest: true, sash: l.hat === 'straw' ? undefined : '#e8c45a', outline, shoes: l.hat === 'straw' ? '#a8703a' : '#3a2a1e',
+    face: 'hero', scar: l.scar, vest: true, sash: l.hat === 'straw' ? undefined : '#e8c45a', outline, shoes: l.hat === 'straw' ? '#a8703a' : '#3a2a1e',
   };
 }
 

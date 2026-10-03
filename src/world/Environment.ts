@@ -1,6 +1,7 @@
 // Sky dome, sun & ambient lighting, fog, day/night cycle, weather and
 // regional atmosphere that blends toward the theme of the nearest island.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ISLANDS, IslandTheme } from '../game/data';
 import { clamp, damp, lerp, rand, smoothstep } from '../core/math';
 import { ctx } from '../game/ctx';
@@ -225,21 +226,32 @@ export class Environment {
     scene.add(this.rain);
     scene.add(this.ambientField.points);
 
-    // Puffy anime clouds scattered over the whole voyage.
-    const cloudGeo = new THREE.IcosahedronGeometry(1, 2);
-    const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x8899aa, emissiveIntensity: 0.35, fog: false, flatShading: false });
-    const CL = 140, PUFFS = 7;
+    // Puffy anime cumulus scattered over the whole voyage: domed puffs on a shared flat base.
+    const dome = new THREE.SphereGeometry(1, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2);
+    const base = new THREE.CircleGeometry(1, 18).rotateX(Math.PI / 2);
+    dome.deleteAttribute('uv'); base.deleteAttribute('uv');
+    const cloudGeo = mergeGeometries([dome.toNonIndexed(), base.toNonIndexed()])!;
+    const cloudRamp = new THREE.DataTexture(new Uint8Array([178, 178, 178, 255, 228, 228, 228, 255, 255, 255, 255, 255]), 3, 1, THREE.RGBAFormat);
+    cloudRamp.needsUpdate = true;
+    const cloudMat = new THREE.MeshToonMaterial({ color: 0xffffff, emissive: 0x8aa4c8, emissiveIntensity: 0.55, gradientMap: cloudRamp, fog: false });
+    const CL = 150, PUFFS = 11;
     this.clouds = new THREE.InstancedMesh(cloudGeo, cloudMat, CL * PUFFS);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
     let k = 0;
     for (let c = 0; c < CL; c++) {
-      const cx = rand(-3500, 3500), cz = rand(-12500, 2500), cy = rand(260, 420);
-      const size = rand(25, 60);
+      const cx = rand(-3500, 3500), cz = rand(-12500, 2500), cy = rand(240, 460);
+      const size = rand(22, 58);
+      const len = rand(1.2, 2.2);
       for (let i = 0; i < PUFFS; i++) {
-        const a = (i / PUFFS) * Math.PI * 2;
-        p.set(cx + Math.cos(a) * size * rand(0.4, 1.3), cy + rand(-0.2, 0.5) * size * (i === 0 ? 1.4 : 0.6), cz + Math.sin(a) * size * rand(0.3, 0.7));
-        const r = size * rand(0.5, 0.95) * (i === 0 ? 1.3 : 1);
-        s.set(r * 1.2, r * 0.75, r);
+        const t = i / (PUFFS - 1) - 0.5;
+        const center = 1 - Math.abs(t) * 1.6;
+        const r = size * (0.45 + center * 0.55) * rand(0.75, 1.1);
+        // Base row first, then a few big crown puffs in the middle raised above it.
+        const crown = i % 3 === 1;
+        const y = cy + (crown ? size * rand(0.25, 0.55) * center : 0);
+        p.set(cx + t * size * len * 2 + rand(-0.2, 0.2) * size, y, cz + rand(-0.45, 0.45) * size);
+        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
+        s.set(r * 1.25, r * (crown ? 0.95 : 0.75), r);
         m.compose(p, q, s);
         this.clouds.setMatrixAt(k++, m);
       }
@@ -333,14 +345,15 @@ export class Environment {
     this.sun.target.position.copy(focus);
     this.sun.color.copy(sunCol).lerp(new THREE.Color(0.6, 0.7, 1.0), this.night);
     this.sun.intensity = lerp(2.8, 0.55, this.night) * (1 - storm * 0.55) * (1 - this.darken * 0.6) * (0.55 + 0.45 * Math.min(1, dayF + this.night));
-    this.hemi.color.copy(c.top).lerp(new THREE.Color(1, 1, 1), 0.4);
-    this.hemi.groundColor.setHex(0x4a5a44).lerp(new THREE.Color(0x101420), this.night);
-    this.hemi.intensity = lerp(1.15, 0.55, this.night) * (1 - storm * 0.25);
+    this.hemi.color.copy(c.top).lerp(new THREE.Color(1, 1, 1), 0.3);
+    this.hemi.groundColor.setHex(0x5a5038).lerp(new THREE.Color(0x101420), this.night);
+    this.hemi.intensity = lerp(0.95, 0.55, this.night) * (1 - storm * 0.25);
     this.ambient.intensity = 0.12 + this.night * 0.12;
 
-    // Clouds tint.
-    (this.clouds.material as THREE.MeshLambertMaterial).color.copy(c.cloud);
-    (this.clouds.material as THREE.MeshLambertMaterial).emissive.copy(c.cloud).multiplyScalar(0.35);
+    // Clouds tint: the shadowed undersides take on the sky colour instead of going grey.
+    const cm = this.clouds.material as THREE.MeshToonMaterial;
+    cm.color.copy(c.cloud);
+    cm.emissive.copy(c.top).lerp(c.cloud, 0.45).multiplyScalar(0.62);
 
     // Ocean uniforms.
     const om = ctx.ocean.material.uniforms;
