@@ -1,6 +1,7 @@
 // The game: boot, state machine, main loop, island activation, docking and
 // boarding, boss fights, the awakening, rewards, saving and the ending.
 import * as THREE from 'three';
+import { loadBodyParts } from '../entities/bodyModel';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -114,6 +115,7 @@ export class Game {
     ctx.world = new World(ctx.scene);
     this.grass = new Grass(ctx.scene);
     ctx.cam = new CameraRig(ctx.camera);
+    await loadBodyParts(import.meta.env.BASE_URL + 'models/characters.glb');
     await ctx.world.generate((f, label) => ctx.ui.loading(0.05 + f * 0.8, label));
     ctx.ui.loading(0.88, 'Painting the sea charts...');
     await this.frame();

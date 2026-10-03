@@ -1,6 +1,7 @@
 // Procedurally built, procedurally animated anime-style character rig.
 import * as THREE from 'three';
 import { clothGradient, clothTexture, skinGradient, charOutlineMat, sharedUniforms, strawTexture } from '../world/materials';
+import { ARM_ANGLE, bodyGeometry, bodyPartsReady, handGeometry, modelFace, modelHead } from './bodyModel';
 import { EXPR, Expr, FaceOpts, FaceStyle, atlasView, beardGeometry, faceAtlas, faceGeometry, fistGeometry, hairGeometry, headGeometry, headPoint, setAtlasCell, shell } from './rigParts';
 
 // Flickering rim-lit flame aura for awakened fighters.
@@ -372,12 +373,14 @@ export class Humanoid {
     const shorts = bare || L.hat === 'straw';
     const sandals = L.hat === 'straw';
 
+    // Blender-modelled bodies are skinned on at the end of build(); the procedural shells are the fallback.
+    const skinned = bodyPartsReady();
     // Pelvis and torso: smooth elliptical shells (slim waist, broad chest).
-    this.mesh(shell([[-0.17, 0.04 * b, 0.035 * b], [-0.14, 0.12 * b, 0.1 * b], [-0.07, 0.172 * b + bl, 0.13 * b + bl2], [0, 0.182 * b + bl, 0.138 * b + bl2], [0.07, 0.176 * b + bl, 0.135 * b + bl2], [0.12, 0.165 * b + bl, 0.128 * b + bl2]]), pants, hips);
-    this.mesh(shell([[-0.08, 0.17 * b + bl, 0.132 * b + bl2], [0.02, 0.162 * b + bl * 1.4, 0.128 * b + bl2 * 1.5], [0.12, 0.158 * b + bl * 1.2, 0.13 * b + bl2 * 1.3], [0.22, 0.17 * b + bl * 0.5, 0.132 * b + bl2 * 0.5], [0.3, 0.18 * b, 0.136 * b]]), torsoMat, spine);
-    this.mesh(shell([[-0.16, 0.17 * b, 0.132 * b], [-0.06, 0.19 * b, 0.142 * b], [0.03, 0.214 * b, 0.146 * b], [0.1, 0.224 * b, 0.14 * b], [0.15, 0.2 * b, 0.12 * b], [0.19, 0.13 * b, 0.092 * b], [0.22, 0.07, 0.064]]), torsoMat, chest);
+    if (!skinned) this.mesh(shell([[-0.17, 0.04 * b, 0.035 * b], [-0.14, 0.12 * b, 0.1 * b], [-0.07, 0.172 * b + bl, 0.13 * b + bl2], [0, 0.182 * b + bl, 0.138 * b + bl2], [0.07, 0.176 * b + bl, 0.135 * b + bl2], [0.12, 0.165 * b + bl, 0.128 * b + bl2]]), pants, hips);
+    if (!skinned) this.mesh(shell([[-0.08, 0.17 * b + bl, 0.132 * b + bl2], [0.02, 0.162 * b + bl * 1.4, 0.128 * b + bl2 * 1.5], [0.12, 0.158 * b + bl * 1.2, 0.13 * b + bl2 * 1.3], [0.22, 0.17 * b + bl * 0.5, 0.132 * b + bl2 * 0.5], [0.3, 0.18 * b, 0.136 * b]]), torsoMat, spine);
+    if (!skinned) this.mesh(shell([[-0.16, 0.17 * b, 0.132 * b], [-0.06, 0.19 * b, 0.142 * b], [0.03, 0.214 * b, 0.146 * b], [0.1, 0.224 * b, 0.14 * b], [0.15, 0.2 * b, 0.12 * b], [0.19, 0.13 * b, 0.092 * b], [0.22, 0.07, 0.064]]), torsoMat, chest);
     if (bare) {
-      for (const s of [-1, 1]) {
+      if (!skinned) for (const s of [-1, 1]) {
         const pec = this.mesh(new THREE.SphereGeometry(0.085 * b, 12, 8), skin, chest, s * 0.085 * b, 0.045, 0.1 * b, false);
         pec.scale.set(1.05, 0.6, 0.32);
       }
@@ -441,7 +444,7 @@ export class Humanoid {
     }
 
     // Neck and head.
-    this.mesh(new THREE.CylinderGeometry(0.052 * sb, 0.06 * sb, 0.14, 10), skin, neck, 0, 0.01, 0, false);
+    if (!skinned) this.mesh(new THREE.CylinderGeometry(0.052 * sb, 0.06 * sb, 0.14, 10), skin, neck, 0, 0.01, 0, false);
     const style = L.face ?? (L.build && L.build >= 1.4 || belly > 0.3 ? 'brute' : L.beard && L.hairStyle === 'bald' ? 'elder' : 'grunt');
     const jaw = { hero: 1, fem: 1.05, grunt: 0.8, brute: 0.4, elder: 0.7 }[style];
     const R = 0.19;
@@ -450,8 +453,10 @@ export class Humanoid {
     hp.scale.set(1, 1.06, 1);
     head.add(hp);
     // Slightly oversized heads read better at gameplay distance (anime proportions).
-    head.scale.setScalar(style === 'brute' ? 1.04 : 1.12);
-    this.mesh(headGeometry(R, jaw), skin, hp);
+    // Sculpted heads sit at slightly more heroic proportions than the old chibi ones.
+    head.scale.setScalar(skinned ? 1.02 * Math.pow(b, 0.3) : style === 'brute' ? 1.04 : 1.12);
+    const sculpted = skinned ? modelHead(style) : null;
+    this.mesh(sculpted ?? headGeometry(R, jaw), skin, hp);
     const hairHex = '#' + new THREE.Color(L.hair as any).getHexString();
     this.faceOpts = {
       style, iris: L.iris ?? (style === 'hero' ? '#5a3a24' : '#3a2a20'), brow: '#' + new THREE.Color(hairHex).multiplyScalar(0.75).getHexString(),
@@ -460,10 +465,10 @@ export class Humanoid {
     this.faceMat = new THREE.MeshToonMaterial({ gradientMap: skinGradient(), transparent: true, alphaTest: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     rimLight(this.faceMat);
     this.paintFace();
-    const face = new THREE.Mesh(faceGeometry(R, jaw), this.faceMat);
+    const face = new THREE.Mesh(sculpted ? modelFace(style) : faceGeometry(R, jaw), this.faceMat);
     face.renderOrder = 1;
     hp.add(face);
-    for (const s of [-1, 1]) {
+    if (!sculpted) for (const s of [-1, 1]) {
       const ep = headPoint(1.62, s * 1.5, R, jaw);
       const ear = this.mesh(new THREE.SphereGeometry(0.042, 8, 6), skin, hp, ep.x * 0.97, ep.y, ep.z - 0.005);
       ear.scale.set(0.45, 0.85, 0.62);
@@ -478,15 +483,20 @@ export class Humanoid {
     // Arms.
     const arm = (side: 1 | -1) => {
       const sh = g(side === 1 ? 'shL' : 'shR', chest, side * 0.25 * b, 0.07, 0);
-      // The upper arm's rounded top doubles as the deltoid, tucked into the torso.
-      this.mesh(limb(0.067 * sb, 0.058 * sb, 0.2, 0.4, 0.008 * sb), torsoMat, sh, -side * 0.006, -0.125, 0);
-      if (!bare && !L.armor) this.mesh(new THREE.CylinderGeometry(0.074 * sb, 0.078 * sb, 0.05, 12), shirt, sh, 0, -0.2, 0, false);
       const el = g(side === 1 ? 'elL' : 'elR', sh, 0, -0.29, 0);
-      // Joint ball fills the seam between upper arm and forearm so bends stay smooth.
-      this.mesh(new THREE.SphereGeometry(0.057 * sb, 12, 8), torsoMat, el, 0, 0, 0, false);
-      this.mesh(limb(0.06 * sb, 0.045 * sb, 0.19, 0.22, 0.008 * sb), skin, el, 0, -0.13, 0);
       const ha = g(side === 1 ? 'haL' : 'haR', el, 0, -0.28, 0);
-      this.mesh(fistGeometry(1.05 * sb, side), skin, ha, 0, 0, 0);
+      if (skinned) {
+        // Rolled sleeve cuff just above the elbow.
+        if (!bare) this.mesh(new THREE.CylinderGeometry(0.056 * sb, 0.06 * sb, 0.045, 16), shirt, sh, 0, -0.245, 0);
+        this.mesh(handGeometry(sb, side), skin, ha, 0, 0, 0);
+      } else {
+        // The upper arm's rounded top doubles as the deltoid, tucked into the torso.
+        this.mesh(limb(0.067 * sb, 0.058 * sb, 0.2, 0.4, 0.008 * sb), torsoMat, sh, -side * 0.006, -0.125, 0);
+        if (!bare && !L.armor) this.mesh(new THREE.CylinderGeometry(0.074 * sb, 0.078 * sb, 0.05, 12), shirt, sh, 0, -0.2, 0, false);
+        this.mesh(new THREE.SphereGeometry(0.057 * sb, 12, 8), torsoMat, el, 0, 0, 0, false);
+        this.mesh(limb(0.06 * sb, 0.045 * sb, 0.19, 0.22, 0.008 * sb), skin, el, 0, -0.13, 0);
+        this.mesh(fistGeometry(1.05 * sb, side), skin, ha, 0, 0, 0);
+      }
       return sh;
     };
     arm(1);
@@ -494,8 +504,12 @@ export class Humanoid {
     // Legs.
     const leg = (side: 1 | -1) => {
       const hi = g(side === 1 ? 'hiL' : 'hiR', hips, side * 0.1 * b, -0.02, 0);
-      this.mesh(limb(0.096 * sb, 0.076 * sb, 0.27, 0.3, 0.006 * sb), pants, hi, 0, -0.21, 0);
       const kn = g(side === 1 ? 'knL' : 'knR', hi, 0, -0.44, 0);
+      if (skinned) {
+        if (shorts) this.mesh(new THREE.CylinderGeometry(0.068 * sb, 0.074 * sb, 0.06, 16), pants, kn, 0, 0.03, 0);
+        else this.mesh(new THREE.CylinderGeometry(0.052 * sb, 0.047 * sb, 0.22, 16), shoes, kn, 0, -0.34, 0);
+      } else {
+      this.mesh(limb(0.096 * sb, 0.076 * sb, 0.27, 0.3, 0.006 * sb), pants, hi, 0, -0.21, 0);
       this.mesh(new THREE.SphereGeometry(0.075 * sb, 12, 8), pants, kn, 0, 0, 0, false);
       if (shorts) {
         this.mesh(new THREE.CylinderGeometry(0.1 * sb, 0.106 * sb, 0.08, 12), pants, kn, 0, 0.01, 0);
@@ -503,6 +517,7 @@ export class Humanoid {
       } else {
         this.mesh(limb(0.078 * sb, 0.07 * sb, 0.27, 0.3, 0.005 * sb), pants, kn, 0, -0.2, 0);
         this.mesh(new THREE.CylinderGeometry(0.08 * sb, 0.072 * sb, 0.2, 12), shoes, kn, 0, -0.33, 0);
+      }
       }
       const ft = g(side === 1 ? 'ftL' : 'ftR', kn, 0, -0.43, 0);
       if (sandals) {
@@ -531,7 +546,38 @@ export class Humanoid {
     };
     leg(1);
     leg(-1);
+    if (skinned) this.skinBody({ build: b, belly, fem: style === 'fem' }, { top: !bare, sleeve: bare ? -1 : 0.25, shorts }, [skin, shirt, pants]);
     this.attachWeapons();
+  }
+
+  /** Binds the Blender torso and limbs to the joints; the arms are bound in the A-pose they were modelled in. */
+  private skinBody(fit: { build: number; belly: number; fem: boolean }, cov: { top: boolean; sleeve: number; shorts: boolean }, mats: THREE.Material[]) {
+    this.j.shL.rotation.z = ARM_ANGLE;
+    this.j.shR.rotation.z = -ARM_ANGLE;
+    this.root.updateMatrixWorld(true);
+    const skeleton = new THREE.Skeleton(JOINTS.map((k) => this.j[k]) as unknown as THREE.Bone[]);
+    const add = (geo: THREE.BufferGeometry) => {
+      const m = new THREE.SkinnedMesh(geo, mats);
+      m.castShadow = true;
+      m.frustumCulled = false;
+      this.root.add(m);
+      m.updateMatrixWorld(true);
+      m.bind(skeleton, m.matrixWorld);
+      if (this.look.outline) {
+        const o = new THREE.SkinnedMesh(geo, charOutlineMat);
+        o.frustumCulled = false;
+        this.root.add(o);
+        o.updateMatrixWorld(true);
+        o.bind(skeleton, o.matrixWorld);
+      }
+    };
+    add(bodyGeometry('torso', 1, fit, cov, JOINTS));
+    for (const side of [1, -1] as const) {
+      add(bodyGeometry('arm', side, fit, cov, JOINTS));
+      add(bodyGeometry('leg', side, fit, cov, JOINTS));
+    }
+    this.j.shL.rotation.z = 0;
+    this.j.shR.rotation.z = 0;
   }
 
   /** (Re)paint the face atlas, e.g. when the eyes start to glow on awakening. */
@@ -564,11 +610,11 @@ export class Humanoid {
       case 'straw': {
         const m = this.mat(hc);
         m.map = strawTexture();
-        const brim = this.mesh(new THREE.CylinderGeometry(0.4, 0.42, 0.025, 24), m, head, 0, 0.31, 0);
+        const brim = this.mesh(new THREE.CylinderGeometry(0.4, 0.42, 0.025, 24), m, head, 0, 0.29, 0);
         brim.rotation.x = -0.12;
-        const crown = this.mesh(new THREE.CylinderGeometry(0.19, 0.21, 0.14, 18), m, head, 0, 0.39, -0.01);
+        const crown = this.mesh(new THREE.CylinderGeometry(0.17, 0.195, 0.14, 18), m, head, 0, 0.37, -0.01);
         crown.rotation.x = -0.12;
-        const band = this.mesh(new THREE.CylinderGeometry(0.213, 0.215, 0.045, 18), this.mat(0xc8282b), head, 0, 0.345, -0.005, false);
+        const band = this.mesh(new THREE.CylinderGeometry(0.198, 0.2, 0.045, 18), this.mat(0xc8282b), head, 0, 0.325, -0.005, false);
         band.rotation.x = -0.12;
         break;
       }
@@ -584,10 +630,10 @@ export class Humanoid {
       }
       case 'tricorn': {
         const m = this.mat(hc);
-        const brim = this.mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.04, 3), m, head, 0, 0.33, 0);
+        const brim = this.mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.04, 3), m, head, 0, 0.3, 0);
         brim.rotation.y = Math.PI / 6 + Math.PI;
-        this.mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.16, 14), m, head, 0, 0.42, 0);
-        this.mesh(new THREE.SphereGeometry(0.026, 8, 6), this.mat(0xf2ede4), head, 0, 0.43, 0.185, false);
+        this.mesh(new THREE.CylinderGeometry(0.15, 0.175, 0.16, 14), m, head, 0, 0.39, 0);
+        this.mesh(new THREE.SphereGeometry(0.026, 8, 6), this.mat(0xf2ede4), head, 0, 0.4, 0.165, false);
         break;
       }
       case 'helmet':
@@ -603,10 +649,10 @@ export class Humanoid {
       }
       case 'navy': {
         const m = this.mat(0xf4f4f4);
-        this.mesh(new THREE.CylinderGeometry(0.21, 0.2, 0.12, 16), m, head, 0, 0.36, 0);
-        const v = this.mesh(new THREE.BoxGeometry(0.26, 0.02, 0.14), this.mat(0x1a2a5a), head, 0, 0.31, 0.18);
+        this.mesh(new THREE.CylinderGeometry(0.205, 0.185, 0.12, 16), m, head, 0, 0.35, 0);
+        const v = this.mesh(new THREE.BoxGeometry(0.24, 0.02, 0.13), this.mat(0x1a2a5a), head, 0, 0.3, 0.17);
         v.rotation.x = 0.2;
-        this.mesh(new THREE.CylinderGeometry(0.212, 0.212, 0.03, 16), this.mat(0x1a2a5a), head, 0, 0.32, 0, false);
+        this.mesh(new THREE.CylinderGeometry(0.192, 0.188, 0.03, 16), this.mat(0x1a2a5a), head, 0, 0.305, 0, false);
         break;
       }
       case 'turban': {
@@ -618,12 +664,12 @@ export class Humanoid {
         break;
       }
       case 'crown': {
-        const m = new THREE.MeshToonMaterial({ color: 0xffd54a, emissive: 0x6a4a00, gradientMap: clothGradient() });
+        const m = new THREE.MeshToonMaterial({ color: 0xffd54a, emissive: 0x6a4a00, gradientMap: clothGradient(), side: THREE.DoubleSide });
         this.mats.push(m);
-        this.mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 16, 1, true), m, head, 0, 0.36, 0);
+        this.mesh(new THREE.CylinderGeometry(0.188, 0.172, 0.08, 16, 1, true), m, head, 0, 0.3, 0);
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
-          this.mesh(new THREE.ConeGeometry(0.03, 0.1, 4), m, head, Math.cos(a) * 0.2, 0.44, Math.sin(a) * 0.2, false);
+          this.mesh(new THREE.ConeGeometry(0.03, 0.1, 4), m, head, Math.cos(a) * 0.188, 0.38, Math.sin(a) * 0.188, false);
         }
         break;
       }

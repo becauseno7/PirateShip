@@ -104,11 +104,11 @@ function shade(hex: string, k: number) {
 interface FaceMetrics { eyeX: number; eyeY: number; eyeW: number; eyeH: number; lid: number; browY: number; browW: number; browT: number; mouthY: number; noseY: number }
 function metrics(style: FaceStyle): FaceMetrics {
   switch (style) {
-    case 'hero': return { eyeX: 50, eyeY: 150, eyeW: 50, eyeH: 46, lid: 7, browY: 111, browW: 40, browT: 7, mouthY: 212, noseY: 183 };
-    case 'fem': return { eyeX: 50, eyeY: 151, eyeW: 50, eyeH: 46, lid: 7, browY: 112, browW: 36, browT: 4, mouthY: 212, noseY: 184 };
-    case 'brute': return { eyeX: 48, eyeY: 150, eyeW: 38, eyeH: 24, lid: 6, browY: 126, browW: 44, browT: 11, mouthY: 214, noseY: 184 };
-    case 'elder': return { eyeX: 48, eyeY: 150, eyeW: 38, eyeH: 24, lid: 6, browY: 124, browW: 42, browT: 9, mouthY: 212, noseY: 184 };
-    default: return { eyeX: 48, eyeY: 150, eyeW: 42, eyeH: 34, lid: 6, browY: 118, browW: 38, browT: 7, mouthY: 212, noseY: 184 };
+    case 'hero': return { eyeX: 53, eyeY: 156, eyeW: 60, eyeH: 60, lid: 8, browY: 110, browW: 44, browT: 7, mouthY: 214, noseY: 188 };
+    case 'fem': return { eyeX: 53, eyeY: 157, eyeW: 60, eyeH: 62, lid: 8, browY: 111, browW: 40, browT: 4, mouthY: 214, noseY: 189 };
+    case 'brute': return { eyeX: 50, eyeY: 154, eyeW: 44, eyeH: 30, lid: 7, browY: 128, browW: 48, browT: 12, mouthY: 216, noseY: 188 };
+    case 'elder': return { eyeX: 50, eyeY: 154, eyeW: 42, eyeH: 30, lid: 6, browY: 126, browW: 44, browT: 9, mouthY: 214, noseY: 188 };
+    default: return { eyeX: 51, eyeY: 155, eyeW: 50, eyeH: 44, lid: 7, browY: 118, browW: 42, browT: 7, mouthY: 214, noseY: 188 };
   }
 }
 
@@ -231,7 +231,7 @@ function drawMouth(g: CanvasRenderingContext2D, ox: number, m: FaceMetrics, o: F
   switch (st) {
     case 'smile':
       g.lineWidth = 3;
-      g.beginPath(); g.moveTo(cx - 11, cy - 2); g.quadraticCurveTo(cx, cy + 5, cx + 11, cy - 2); g.stroke();
+      g.beginPath(); g.moveTo(cx - 15, cy - 3); g.quadraticCurveTo(cx, cy + 7, cx + 15, cy - 3); g.stroke();
       break;
     case 'flat':
       g.lineWidth = 3;

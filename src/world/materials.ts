@@ -68,10 +68,17 @@ export const outlineMat = new THREE.MeshBasicMaterial({ color: 0x15100c, side: T
 export const charOutlineMat = new THREE.ShaderMaterial({
   uniforms: { uWidth: { value: 0.0105 }, uColor: { value: new THREE.Color(0x1a110c) } },
   vertexShader: /* glsl */ `
+    #include <common>
+    #include <skinning_pars_vertex>
     uniform float uWidth;
     void main() {
-      vec4 wp = modelMatrix * vec4(position, 1.0);
-      vec3 wn = normalize(mat3(modelMatrix) * normal);
+      #include <skinbase_vertex>
+      #include <beginnormal_vertex>
+      #include <skinnormal_vertex>
+      #include <begin_vertex>
+      #include <skinning_vertex>
+      vec4 wp = modelMatrix * vec4(transformed, 1.0);
+      vec3 wn = normalize(mat3(modelMatrix) * objectNormal);
       float d = length(cameraPosition - wp.xyz);
       wp.xyz += wn * uWidth * clamp(d * 0.14, 1.0, 4.0);
       gl_Position = projectionMatrix * viewMatrix * wp;
