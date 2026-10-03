@@ -779,6 +779,11 @@ export class Island {
         const a = (i / 6) * Math.PI * 2;
         this.place(vp[0] + Math.cos(a) * 14, vp[1] + Math.sin(a) * 14, -a - Math.PI / 2, (b) => P.hut(b), 3.4);
       }
+      // Village green: a fire ringed by stones, two totems and a fish-drying rack.
+      this.place(vp[0], vp[1], 0, (b) => P.campfireBase(b), 0, 0.1);
+      this.firePositions.push(new THREE.Vector3(vp[0], this.h(vp[0], vp[1]) + 0.4, vp[1]));
+      for (const k of [0.5, 3.6]) this.place(vp[0] + Math.cos(k) * 7, vp[1] + Math.sin(k) * 7, Math.PI / 2 - k + Math.PI, (b) => P.totem(b, 5.5 + k * 0.3), 1);
+      this.place(vp[0] + Math.cos(2.1) * 8, vp[1] + Math.sin(2.1) * 8, 2.1, (b) => P.fishRack(b), 1.8);
       this.captive(['Barnacle\'s men burned our fishing boats... please, drive them off our island!', 'The old temple behind the reef is where he hoards everything he steals.'], 'Chief Lulani', [vp[0] + 3, vp[1] + 2, 0]);
       this.captive(['You came on that little ship? Brave. Or foolish. Probably both!'], 'Kai the Diver', [vp[0] - 3, vp[1] - 2, 1]);
     }

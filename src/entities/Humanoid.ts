@@ -482,6 +482,8 @@ export class Humanoid {
       this.mesh(limb(0.067 * sb, 0.058 * sb, 0.2, 0.4, 0.008 * sb), torsoMat, sh, -side * 0.006, -0.125, 0);
       if (!bare && !L.armor) this.mesh(new THREE.CylinderGeometry(0.074 * sb, 0.078 * sb, 0.05, 12), shirt, sh, 0, -0.2, 0, false);
       const el = g(side === 1 ? 'elL' : 'elR', sh, 0, -0.29, 0);
+      // Joint ball fills the seam between upper arm and forearm so bends stay smooth.
+      this.mesh(new THREE.SphereGeometry(0.057 * sb, 12, 8), torsoMat, el, 0, 0, 0, false);
       this.mesh(limb(0.06 * sb, 0.045 * sb, 0.19, 0.22, 0.008 * sb), skin, el, 0, -0.13, 0);
       const ha = g(side === 1 ? 'haL' : 'haR', el, 0, -0.28, 0);
       this.mesh(fistGeometry(1.05 * sb, side), skin, ha, 0, 0, 0);
@@ -494,6 +496,7 @@ export class Humanoid {
       const hi = g(side === 1 ? 'hiL' : 'hiR', hips, side * 0.1 * b, -0.02, 0);
       this.mesh(limb(0.096 * sb, 0.076 * sb, 0.27, 0.3, 0.006 * sb), pants, hi, 0, -0.21, 0);
       const kn = g(side === 1 ? 'knL' : 'knR', hi, 0, -0.44, 0);
+      this.mesh(new THREE.SphereGeometry(0.075 * sb, 12, 8), pants, kn, 0, 0, 0, false);
       if (shorts) {
         this.mesh(new THREE.CylinderGeometry(0.1 * sb, 0.106 * sb, 0.08, 12), pants, kn, 0, 0.01, 0);
         this.mesh(limb(0.064 * sb, 0.046 * sb, 0.27, 0.3, 0.014 * sb), skin, kn, 0, -0.2, 0);

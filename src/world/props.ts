@@ -342,28 +342,50 @@ export function iceFloe(): THREE.BufferGeometry {
 }
 
 // ------------------------------------------------------------------ buildings
-export function hut(b: GeoBatch, wall = 0xe2c58e, roof = 0xdcb85e) {
-  // Stilt hut: bamboo deck, woven walls, layered thatch with a fringe, ladder and porch.
+const _hm = new THREE.Matrix4(), _hr = new THREE.Matrix4();
+/** One thatch strip lying on a cone surface at angle `a`, centre height `y`, radius `r`, leaning inward by `tilt`. */
+function thatchStrip(b: GeoBatch, a: number, r: number, y: number, tilt: number, w: number, h: number, color: number) {
+  _hm.makeTranslation(Math.cos(a) * r, y, Math.sin(a) * r);
+  _hm.multiply(_hr.makeRotationY(Math.PI / 2 - a)).multiply(_hr.makeRotationX(-tilt)).multiply(_hr.makeScale(w, h, 0.07));
+  b.addGeo(UNIT.box, color, _hm);
+}
+
+export function hut(b: GeoBatch, wall = 0xe2c58e, roof = 0xd6b25a) {
+  // Stilt hut: bamboo deck, woven walls, shaggy layered thatch, palm topknot, porch and ladder.
   const bamboo = 0xb89c5a, dark = 0x6a5030;
   for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; b.cyl(0.16, 1.4, Math.cos(a) * 2.7, -0.4, Math.sin(a) * 2.7, dark, 6); }
-  b.cyl(3.4, 0.25, 0, 1.0, 0, 0x8a6a3a, 12);
+  b.cyl(3.4, 0.25, 0, 1.0, 0, 0x9a7842, 12);
   b.cyl(2.8, 2.3, 0, 1.25, 0, wall, 12);
-  for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2 + 0.13; b.cyl(0.08, 2.3, Math.cos(a) * 2.82, 1.25, Math.sin(a) * 2.82, bamboo, 6); }
-  for (const y of [1.6, 2.6]) b.addGeo(UNIT.torus, dark, mat(0, y, 0, Math.PI / 2, 0, 0, 2.85, 2.85, 0.4));
-  b.cone(4.3, 1.6, 0, 3.3, 0, roof, 12);
-  b.cone(3.4, 1.7, 0, 4.2, 0, shade(roof, 1.08), 12);
-  b.cone(2.2, 1.5, 0, 5.2, 0, shade(roof, 1.16), 12);
-  for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; b.box(0.36, 0.5, 0.06, Math.cos(a) * 4.15, 3.12, Math.sin(a) * 4.15, shade(roof, 0.85), -a + Math.PI / 2, 0.3); }
-  b.cyl(0.1, 0.8, 0, 6.5, 0, dark, 6);
+  // Woven walls: alternating slats and light lashing bands.
+  for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2 + 0.1; b.cyl(0.075, 2.3, Math.cos(a) * 2.82, 1.25, Math.sin(a) * 2.82, i % 2 ? bamboo : shade(bamboo, 0.85), 6); }
+  for (const y of [1.45, 2.2, 3.0]) b.addGeo(UNIT.torus, shade(bamboo, 1.1), mat(0, y, 0, Math.PI / 2, 0, 0, 2.87, 2.87, 0.3));
+  // Thatch: a lumpy core cone dressed in three rings of overlapping straw strips.
+  const R0 = 3.9, Y0 = 3.25, H = 3.9, tilt = Math.atan2(R0, H);
+  b.addGeo(lumpy(new THREE.ConeGeometry(1, 1, 20, 3), 0.1, 2), roof, mat(0, Y0 + H / 2, 0, 0, 0, 0, R0 * 0.97, H, R0 * 0.97));
+  b.cyl(R0 * 0.94, 0.06, 0, Y0 - 0.02, 0, 0x4a3820, 12);
+  const rings: [number, number, number][] = [[0.02, 36, 0.95], [0.36, 26, 0.9], [0.66, 16, 0.8]];
+  rings.forEach(([t, n, hh], ri) => {
+    const r = R0 * (1 - t) + 0.06, y = Y0 + H * t + 0.1;
+    for (let i = 0; i < n; i++) {
+      const a = (i + (ri % 2) * 0.5) / n * Math.PI * 2;
+      const k = 0.82 + ((i * 7 + ri * 3) % 5) * 0.06;
+      thatchStrip(b, a, r, y, tilt, (Math.PI * 2 * r / n) * 1.15, hh + (i % 3) * 0.12, shade(roof, k));
+    }
+  });
+  // Palm-leaf topknot.
+  b.cyl(0.12, 0.9, 0, Y0 + H - 0.2, 0, dark, 6);
+  for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; b.box(0.2, 0.05, 1.3, Math.cos(a) * 0.5, Y0 + H + 0.55, Math.sin(a) * 0.5, i % 2 ? 0x4f9a3a : 0x3f8a32, Math.PI / 2 - a, -0.5); }
+  // Door, lintel, window.
   b.box(1.1, 1.75, 0.2, 0, 2.1, 2.78, 0x3a2414);
-  b.box(1.3, 0.15, 0.3, 0, 3.05, 2.85, dark);
+  b.box(1.3, 0.15, 0.3, 0, 3.0, 2.85, dark);
   b.box(0.9, 0.7, 0.15, 2.0, 2.3, 1.95, 0x2a2018, Math.PI / 4 + 0.05);
-  // Porch and ladder.
-  b.box(2.4, 0.14, 1.4, 0, 1.08, 3.7, 0x8a6a3a);
+  // Porch, rail, ladder and a garland of shells across the doorway.
+  b.box(2.4, 0.14, 1.4, 0, 1.08, 3.7, 0x9a7842);
   for (const sx of [-1, 1]) b.cyl(0.07, 1.6, sx * 1.1, 1.1, 4.3, bamboo, 6);
   b.box(2.3, 0.07, 0.07, 0, 1.95, 4.3, bamboo);
   for (const sx of [-0.4, 0.4]) b.box(0.08, 1.6, 0.08, sx, 0.4, 4.75, bamboo, 0, -0.35);
   for (let i = 0; i < 4; i++) b.box(0.9, 0.06, 0.08, 0, 0.0 + i * 0.32, 4.95 - i * 0.12, bamboo);
+  for (let i = 0; i < 7; i++) { const x = -0.9 + i * 0.3; b.sphere(0.08, x, 2.75 - Math.sin((i / 6) * Math.PI) * 0.25, 2.98, [0xfff4e0, 0xff8f7a, 0x7fd8e0][i % 3]); }
 }
 
 const HOUSE_SHUTTERS = [0x3f7f5a, 0x3d63a8, 0xb8443a, 0xd8a03a, 0x6a4a8a];
@@ -543,6 +565,35 @@ export function campfireBase(b: GeoBatch) {
   }
   b.cyl(0.14, 1.8, -0.8, 0.2, 0, 0x4a3020, 6, 0, 0, Math.PI / 2 - 0.2);
   b.cyl(0.14, 1.8, 0, 0.2, -0.8, 0x4a3020, 6, Math.PI / 2 - 0.2, 0, 0);
+}
+
+/** Carved island totem: stacked painted faces under spread wings and a sun crest. */
+export function totem(b: GeoBatch, h = 6) {
+  const cols = [0xb8463a, 0x2f8a8a, 0xe0a93a, 0x6a3e2a];
+  const n = 3, seg = h / n;
+  for (let i = 0; i < n; i++) {
+    const y = i * seg, c = cols[i % cols.length];
+    b.cyl(0.55, seg * 0.96, 0, y + seg / 2, 0, c, 12);
+    // Eyes, brow and grinning mouth on the front.
+    for (const sx of [-0.2, 0.2]) { b.sphere(0.13, sx, y + seg * 0.62, 0.5, 0xf4ead4); b.sphere(0.07, sx, y + seg * 0.62, 0.6, 0x1a1410); }
+    b.box(0.7, 0.1, 0.16, 0, y + seg * 0.78, 0.5, 0x1a1410);
+    b.box(0.55, 0.16, 0.12, 0, y + seg * 0.32, 0.52, 0xf4ead4);
+    b.box(0.26, 0.24, 0.2, 0, y + seg * 0.47, 0.58, shade(c, 0.8));
+  }
+  // Swept-up carved wings with feather notches.
+  for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) b.box(1.1 - k * 0.25, 0.32, 0.16, sx * (0.85 + k * 0.08), h - 0.9 + k * 0.32, 0, [0x2f8a8a, 0xe0a93a, 0xb8463a][k], 0, 0, sx * (0.75 - k * 0.12));
+  b.cone(0.75, 0.9, 0, h, 0, 0xe0a93a, 8);
+}
+
+/** A-frame rack hung with drying fish. */
+export function fishRack(b: GeoBatch) {
+  for (const sx of [-1.6, 1.6]) for (const sz of [-0.5, 0.5]) b.box(0.1, 2.2, 0.1, sx, 1.0, sz * 0.6, 0x7a5a32, 0, sz * 0.5);
+  b.cyl(0.05, 3.4, 0, 2.0, 0, 0x7a5a32, 6, 0, 0, Math.PI / 2);
+  for (let i = 0; i < 6; i++) {
+    const x = -1.25 + i * 0.5;
+    b.box(0.02, 0.4, 0.02, x, 1.8, 0, 0x5a4a3a);
+    b.sphere(0.16, x, 1.45, 0, i % 2 ? 0x8fa8b8 : 0xa8b8c4, 0.5, 1.6, 0.6);
+  }
 }
 
 export function crate(b: GeoBatch, x: number, y: number, z: number, s = 1, ry = 0) {
