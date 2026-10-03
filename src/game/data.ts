@@ -155,7 +155,7 @@ export const ISLANDS: IslandDef[] = [
       'An eternal winter island where the sea freezes into glittering fields of ice.',
       'Borr the Frost Titan, last of the ancient giants, guards a frozen throne at its peak.',
     ],
-    theme: { sand: 0xdfe6ec, grass: 0xf4f8fb, grass2: 0xdde8f0, rock: 0x6f7c88, peak: 0xffffff, path: 0xb7c4cf, shallow: 0x8fd3e8, fog: 0xd8e6f0, skyTop: 0x6f98c9, skyHorizon: 0xe8f0f8, ambient: 'snow', storm: 0.25 },
+    theme: { sand: 0xdfe6ec, grass: 0xf4f8fb, grass2: 0xdde8f0, rock: 0x7f8c9c, peak: 0xffffff, path: 0xb7c4cf, shallow: 0x8fd3e8, fog: 0xd8e6f0, skyTop: 0x6f98c9, skyHorizon: 0xe8f0f8, ambient: 'snow', storm: 0.25 },
   },
   {
     id: 4, name: 'Thunderhold', title: 'Fortress of the Calamity', style: 'fortress',

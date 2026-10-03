@@ -1009,14 +1009,14 @@ export class Island {
       this.addCollider(x - Math.cos(ry) * 5.3, z + Math.sin(ry) * 5.3, 1.2);
     }
     // Floating rocks drifting above the island.
-    const rockGeo = P.rock(0xe8e2d4, 3);
+    const rockGeo = P.floatingIsle();
     for (let i = 0; i < 14; i++) {
       const a = this.rand() * Math.PI * 2, d = this.R * (0.2 + this.rand() * 0.7);
       const x = this.cx + Math.cos(a) * d, z = this.cz + Math.sin(a) * d;
       const m = new THREE.Mesh(rockGeo, staticMat);
       const s = 3 + this.rand() * 6;
-      m.scale.set(s, s * 0.7, s);
-      m.rotation.set(Math.PI, this.rand() * 6, 0);
+      m.scale.setScalar(s / 3);
+      m.rotation.set(0, this.rand() * 6, 0);
       m.position.set(x, Math.max(0, this.h(x, z)) + 40 + this.rand() * 50, z);
       m.castShadow = true;
       this.decoGroup.add(m);
@@ -1079,8 +1079,9 @@ export class Island {
         add(P.goldenTree(), 240, { mat: swayMat, scale: [0.8, 1.4] });
         add(P.crystal(0xffe27a), 80, { col: 0.8, scale: [0.8, 2] });
         add(P.crystal(0x9ff6ff), 60, { col: 0.8, scale: [0.8, 2] });
-        add(P.flowers(), 400, { col: 0, shadow: false, mat: grassMat, scale: [1, 1.6] });
-        add(P.grassTuft(0xc7e07a), 2400, { col: 0, shadow: false, mat: grassMat, scale: [0.9, 1.7] });
+        add(P.flowers(), 1400, { col: 0, shadow: false, mat: grassMat, scale: [1, 1.8] });
+        add(P.bush(0x5aa83f), 160, { col: 0, scale: [0.8, 1.4] });
+        add(P.grassTuft(0x8cc85a), 2400, { col: 0, shadow: false, mat: grassMat, scale: [0.9, 1.7] });
         add(P.rock(0xe8e2d4, 8), 60, { col: 1.2, scale: [0.6, 1.8] });
         break;
     }

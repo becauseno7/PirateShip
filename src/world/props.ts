@@ -648,6 +648,24 @@ export function ashShrub(): THREE.BufferGeometry {
   return b.merge();
 }
 
+/** Sky islet: a craggy inverted cone of pale stone, a grassy cap, a golden tree and trailing vines. */
+export function floatingIsle(): THREE.BufferGeometry {
+  const b = new GeoBatch();
+  b.jitter = 0.06;
+  b.addGeo(lumpy(UNIT.ico1, 0.18, 3.3), 0xe0d6c0, mat(0, -0.4, 0, 0, 0, 0, 4.2, 1.3, 4.0));
+  b.addGeo(lumpy(new THREE.ConeGeometry(3.6, 6, 7, 2), 0.25, 1.7), 0xcfc2a6, mat(0, -3.8, 0, Math.PI, 0, 0));
+  b.addGeo(lumpy(new THREE.ConeGeometry(1.4, 3, 6, 1), 0.2, 4.1), 0xb8aa8e, mat(1.2, -7.5, 0.6, Math.PI, 0, 0.2));
+  b.addGeo(new THREE.CylinderGeometry(4.1, 4.3, 0.5, 14), 0x7cc450, mat(0, 0.75, 0));
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2, r = 3.6 + (i % 3) * 0.3, len = 1.5 + (i % 4) * 1.1;
+    b.addGeo(new THREE.CylinderGeometry(0.06, 0.1, len, 4), 0x4f8a3a, mat(Math.cos(a) * r, 0.5 - len / 2, Math.sin(a) * r));
+    b.sphere(0.22, Math.cos(a) * r, 0.5 - len, Math.sin(a) * r, i % 2 ? 0xffd54a : 0x5aa83f);
+  }
+  b.addRaw(goldenTree(), mat(-0.8, 0.9, 0.5, 0, 0, 0, 0.45, 0.45, 0.45));
+  for (let i = 0; i < 6; i++) b.sphere(0.5, Math.cos(i * 1.3) * 2.4, 1.1, Math.sin(i * 1.3) * 2.4, 0x5aa83f, 1, 0.7, 1);
+  return b.merge();
+}
+
 export function watchtower(b: GeoBatch, wood = 0x7a5a38) {
   for (const [x, z] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) b.cyl(0.2, 7, x, 0, z, wood, 6);
   b.box(4.2, 0.3, 4.2, 0, 7, 0, wood);
