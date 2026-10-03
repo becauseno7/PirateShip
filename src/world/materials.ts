@@ -158,13 +158,43 @@ export function terrainMaterial(lava = 0) {
           float v1 = abs(wNoise(w * 0.045) - 0.5), v2 = abs(wNoise(w * 0.11 + 7.0) - 0.5);
           float vein = (1.0 - smoothstep(0.0, 0.012, v1)) + 0.5 * (1.0 - smoothstep(0.0, 0.008, v2));
           float lum0 = dot(vColor.rgb, vec3(0.3, 0.59, 0.11));
-          float mask = smoothstep(0.6, 0.72, wFbm(w * 0.012 + 3.0)) * (1.0 - smoothstep(0.05, 0.09, lum0));
+          float mask = smoothstep(0.56, 0.7, wFbm(w * 0.012 + 3.0)) * (1.0 - smoothstep(0.05, 0.09, lum0));
           float pulse = 0.75 + 0.25 * sin(uTime * 1.3 + wNoise(w * 0.02) * 6.28);
-          totalEmissiveRadiance += vec3(1.0, 0.32, 0.05) * vein * mask * pulse * uLava * 1.3;
+          totalEmissiveRadiance += mix(vec3(1.0, 0.25, 0.03), vec3(1.0, 0.75, 0.3), smoothstep(0.6, 1.2, vein)) * vein * mask * pulse * uLava * 1.6;
         }`);
   };
   m.customProgramCacheKey = () => 'terrain-v3';
   return m;
+}
+
+/** Calm pool water: deep centre, rippling caustic glints and a foamy rim. Uses circle UVs. */
+export function pondMaterial(shallow = 0x5ae0d0, deep = 0x0f6f8a) {
+  return new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uShallow: { value: new THREE.Color(shallow) }, uDeep: { value: new THREE.Color(deep) } }]),
+    vertexShader: /* glsl */ `
+      varying vec2 vUv; varying vec3 vW;
+      #include <fog_pars_vertex>
+      void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vec4 mvPosition = viewMatrix * w; gl_Position = projectionMatrix * mvPosition;
+      #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uTime; uniform vec3 uShallow; uniform vec3 uDeep; varying vec2 vUv; varying vec3 vW;
+      #include <fog_pars_fragment>
+      ${GLSL_NOISE}
+      void main() {
+        float r = length(vUv - 0.5) * 2.0;
+        vec3 c = mix(uDeep, uShallow, smoothstep(0.15, 0.95, r));
+        float n = wNoise(vW.xz * 0.35 + vec2(uTime * 0.15, uTime * 0.11)) + 0.5 * wNoise(vW.xz * 0.8 - uTime * 0.2);
+        float glint = smoothstep(0.9, 1.05, n);
+        c += vec3(0.85, 0.95, 1.0) * glint * 0.35;
+        float ring = smoothstep(0.82, 0.93, r + 0.04 * sin(atan(vUv.y - 0.5, vUv.x - 0.5) * 9.0 + uTime));
+        c = mix(c, vec3(0.95, 0.98, 1.0), ring * 0.65);
+        gl_FragColor = vec4(c, 1.0 - smoothstep(0.96, 1.0, r));
+        #include <fog_fragment>
+      }`,
+    transparent: true,
+    fog: true,
+  });
 }
 
 export function lavaMaterial() {

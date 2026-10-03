@@ -336,10 +336,27 @@ export function iceFloe(): THREE.BufferGeometry {
 
 // ------------------------------------------------------------------ buildings
 export function hut(b: GeoBatch, wall = 0xc9a86a, roof = 0xd8b45a) {
-  b.cyl(3, 2.6, 0, 0, 0, wall, 12);
-  b.cone(3.9, 2.9, 0, 2.5, 0, roof, 12);
-  b.box(1.1, 1.8, 0.3, 0, 0.9, 3.0, 0x4a3420);
-  b.cyl(0.12, 2.6, 2.9, 0, 0.8, 0x7a5a38, 6);
+  // Stilt hut: bamboo deck, woven walls, layered thatch with a fringe, ladder and porch.
+  const bamboo = 0x9a8448, dark = 0x5a4428;
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; b.cyl(0.16, 1.4, Math.cos(a) * 2.7, -0.4, Math.sin(a) * 2.7, dark, 6); }
+  b.cyl(3.4, 0.25, 0, 1.0, 0, 0x8a6a3a, 12);
+  b.cyl(2.8, 2.3, 0, 1.25, 0, wall, 12);
+  for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2 + 0.13; b.cyl(0.08, 2.3, Math.cos(a) * 2.82, 1.25, Math.sin(a) * 2.82, bamboo, 6); }
+  for (const y of [1.6, 2.6]) b.addGeo(UNIT.torus, dark, mat(0, y, 0, Math.PI / 2, 0, 0, 2.85, 2.85, 0.4));
+  b.cone(4.3, 1.6, 0, 3.3, 0, roof, 12);
+  b.cone(3.4, 1.7, 0, 4.2, 0, shade(roof, 1.08), 12);
+  b.cone(2.2, 1.5, 0, 5.2, 0, shade(roof, 1.16), 12);
+  for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; b.box(0.36, 0.5, 0.06, Math.cos(a) * 4.15, 3.12, Math.sin(a) * 4.15, shade(roof, 0.85), -a + Math.PI / 2, 0.3); }
+  b.cyl(0.1, 0.8, 0, 6.5, 0, dark, 6);
+  b.box(1.1, 1.75, 0.2, 0, 2.1, 2.78, 0x3a2414);
+  b.box(1.3, 0.15, 0.3, 0, 3.05, 2.85, dark);
+  b.box(0.9, 0.7, 0.15, 2.0, 2.3, 1.95, 0x2a2018, Math.PI / 4 + 0.05);
+  // Porch and ladder.
+  b.box(2.4, 0.14, 1.4, 0, 1.08, 3.7, 0x8a6a3a);
+  for (const sx of [-1, 1]) b.cyl(0.07, 1.6, sx * 1.1, 1.1, 4.3, bamboo, 6);
+  b.box(2.3, 0.07, 0.07, 0, 1.95, 4.3, bamboo);
+  for (const sx of [-0.4, 0.4]) b.box(0.08, 1.6, 0.08, sx, 0.4, 4.75, bamboo, 0, -0.35);
+  for (let i = 0; i < 4; i++) b.box(0.9, 0.06, 0.08, 0, 0.0 + i * 0.32, 4.95 - i * 0.12, bamboo);
 }
 
 const HOUSE_SHUTTERS = [0x3f7f5a, 0x3d63a8, 0xb8443a, 0xd8a03a, 0x6a4a8a];
@@ -476,13 +493,34 @@ export function windmillBlades(): THREE.BufferGeometry {
 }
 
 export function lighthouse(b: GeoBatch) {
+  // Stone plinth with steps and a keeper's door.
+  b.cyl(3.9, 1.2, 0, 0, 0, 0x8c8478, 16);
+  for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; b.box(1.5, 0.5, 0.35, Math.cos(a) * 3.92, 0.3 + (i % 2) * 0.45, Math.sin(a) * 3.92, i % 2 ? 0x9a9286 : 0x7a736a, -a + Math.PI / 2); }
+  for (let i = 0; i < 3; i++) b.box(1.8 - i * 0.2, 0.25, 0.6, 0, 0.12 + i * 0.25, 4.1 - i * 0.3, 0x7a736a);
+  // Striped tower.
   for (let i = 0; i < 6; i++) {
     const r0 = 3 - i * 0.28, r1 = 3 - (i + 1) * 0.28;
-    b.taper(r0, r1, 3, 0, i * 3, 0, i % 2 ? 0xc8302c : 0xf6f2ea, 12);
+    b.taper(r0, r1, 3, 0, 1.2 + i * 3, 0, i % 2 ? 0xc8302c : 0xf6f2ea, 16);
   }
-  b.cyl(1.6, 0.4, 0, 18, 0, 0x333333, 12);
-  b.cyl(1.2, 2, 0, 18.4, 0, 0xfff2a0, 12);
-  b.cone(1.7, 1.8, 0, 20.4, 0, 0xc8302c, 12);
+  b.box(1.1, 2.0, 0.4, 0, 2.2, 2.85, 0x5a3a22);
+  b.box(1.4, 0.2, 0.5, 0, 3.3, 2.9, 0x3a3a40);
+  for (const [y, a] of [[6.2, 0.3], [10.4, 2.4], [14.4, 4.4]] as const) {
+    const r = 3 - ((y - 1.2) / 3) * 0.28 + 0.02;
+    b.box(0.55, 0.85, 0.2, Math.sin(a) * r, y, Math.cos(a) * r, 0x2c4a66, a);
+    b.box(0.75, 0.12, 0.3, Math.sin(a) * r, y + 0.5, Math.cos(a) * r, 0xeee2c8, a);
+  }
+  // Gallery with railing.
+  b.cyl(2.25, 0.3, 0, 19.2, 0, 0x3a3a40, 16);
+  for (let i = 0; i < 20; i++) { const a = (i / 20) * Math.PI * 2; b.box(0.07, 0.8, 0.07, Math.cos(a) * 2.15, 19.9, Math.sin(a) * 2.15, 0x2a2a30); }
+  b.addGeo(UNIT.torus, 0x2a2a30, mat(0, 20.3, 0, Math.PI / 2, 0, 0, 2.15, 2.15, 0.4));
+  // Lantern room: glowing glass between iron mullions, red dome and a brass finial.
+  b.cyl(1.35, 0.3, 0, 19.5, 0, 0x2a2a30, 12);
+  b.cyl(1.2, 2.0, 0, 19.8, 0, 0xfff2a0, 12);
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; b.box(0.09, 2.0, 0.09, Math.cos(a) * 1.22, 20.8, Math.sin(a) * 1.22, 0x2a2a30); }
+  b.cyl(1.4, 0.2, 0, 21.8, 0, 0x2a2a30, 12);
+  b.addGeo(UNIT.hemi, 0xc8302c, mat(0, 22.0, 0, 0, 0, 0, 1.4, 1.1, 1.4));
+  b.cyl(0.1, 0.8, 0, 23.0, 0, 0xd8b04a, 6);
+  b.sphere(0.2, 0, 23.9, 0, 0xd8b04a);
 }
 
 export function tent(b: GeoBatch, color: number) {
@@ -613,22 +651,39 @@ export function watchtower(b: GeoBatch, wood = 0x7a5a38) {
 
 export function wallSegment(b: GeoBatch, len: number, h: number, color: number, thick = 2.4) {
   b.box(len, h, thick, 0, h / 2, 0, color);
+  // Battered plinth, string course and alternating ashlar courses for texture.
+  b.box(len, 1.2, thick + 0.6, 0, 0.6, 0, shade(color, 0.85));
+  for (let y = 1.8; y < h - 0.4; y += 1.6) b.box(len + 0.02, 0.12, thick + 0.04, 0, y, 0, shade(color, 0.78));
+  b.box(len, 0.3, thick + 0.35, 0, h - 0.15, 0, shade(color, 1.12));
   const n = Math.max(2, Math.floor(len / 2.2));
   for (let i = 0; i < n; i++) {
     const x = -len / 2 + (i + 0.5) * (len / n);
     if (i % 2 === 0) b.box(len / n * 0.9, 1.2, thick + 0.2, x, h + 0.6, 0, color);
+    else for (const sz of [-1, 1]) b.box(0.18, 0.9, 0.06, x, h * 0.6, sz * (thick / 2 + 0.02), 0x14141a);
   }
 }
 
 export function tower(b: GeoBatch, r: number, h: number, color: number, roof?: number) {
-  b.cyl(r, h, 0, 0, 0, color, 12);
-  b.cyl(r * 1.15, 1, 0, h, 0, color, 12);
+  b.taper(r * 1.12, r, h, 0, 0, 0, color, 16);
+  b.cyl(r * 1.25, 1.2, 0, 0, 0, shade(color, 0.85), 16);
+  for (let y = 2.2; y < h - 1; y += 2.4) b.cyl(r * 1.005 + (1 - y / h) * r * 0.12, 0.14, 0, y, 0, shade(color, 0.78), 16);
+  // Corbelled parapet.
+  for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; b.box(0.35, 0.7, 0.35, Math.cos(a) * r * 1.02, h - 0.2, Math.sin(a) * r * 1.02, shade(color, 0.85)); }
+  b.cyl(r * 1.18, 1, 0, h, 0, color, 16);
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
-    b.box(r * 0.5, 1.1, 0.6, Math.cos(a) * r * 1.05, h + 1.5, Math.sin(a) * r * 1.05, color, -a + Math.PI / 2);
+    b.box(r * 0.5, 1.1, 0.6, Math.cos(a) * r * 1.1, h + 1.5, Math.sin(a) * r * 1.1, color, -a + Math.PI / 2);
   }
-  if (roof !== undefined) b.cone(r * 1.35, r * 2.2, 0, h + 1, 0, roof, 12);
-  for (let i = 0; i < 3; i++) b.box(0.5, 1.2, 0.2, 0, h * (0.35 + i * 0.2), r, 0x1a1a22);
+  if (roof !== undefined) {
+    b.cone(r * 1.35, r * 2.2, 0, h + 1, 0, roof, 12);
+    b.cyl(0.08, 2.2, 0, h + 1 + r * 2.1, 0, 0x2a2a30, 6);
+    b.box(1.4, 0.8, 0.04, 0.72, h + 2.6 + r * 2.1, 0, shade(roof, 0.9));
+  }
+  for (let i = 0; i < 3; i++) {
+    const y = h * (0.35 + i * 0.2), rr = r * (1.12 - 0.12 * (y / h));
+    b.box(0.25, 1.1, 0.25, 0, y, rr, 0x14141a);
+    b.box(0.7, 0.18, 0.35, 0, y + 0.66, rr, shade(color, 1.12));
+  }
 }
 
 export function pillar(b: GeoBatch, h: number, color: number, broken = false) {
@@ -650,8 +705,15 @@ export function steppedTemple(b: GeoBatch, base: number, tiers: number, color: n
 }
 
 export function pyramid(b: GeoBatch, size: number, color: number) {
-  b.cone(size * 0.72, size * 0.62, 0, 0, 0, color, 4, 0, Math.PI / 4);
-  b.box(size * 0.12, size * 0.1, size * 0.04, 0, size * 0.05, size * 0.5, 0x2a1d14);
+  // Stepped courses capped by a gilded pyramidion, with a dark entrance.
+  const tiers = 9;
+  for (let i = 0; i < tiers; i++) {
+    const t = i / tiers, w = size * 1.02 * (1 - t), hh = (size * 0.62) / tiers;
+    b.box(w, hh, w, 0, hh * (i + 0.5), 0, i % 2 ? color : shade(color, 0.92));
+  }
+  b.cone(size * 0.12 * 0.72, size * 0.62 / tiers * 1.5, 0, size * 0.62, 0, 0xffcf3f, 4, 0, Math.PI / 4);
+  b.box(size * 0.12, size * 0.1, size * 0.1, 0, size * 0.05, size * 0.48, 0x2a1d14);
+  b.box(size * 0.16, size * 0.02, size * 0.12, 0, size * 0.105, size * 0.48, shade(color, 1.1));
 }
 
 export function obelisk(b: GeoBatch, h: number, color: number) {
@@ -662,16 +724,32 @@ export function obelisk(b: GeoBatch, h: number, color: number) {
 
 export function domeHouse(b: GeoBatch, r: number, wall: number, dome: number) {
   b.cyl(r, r * 1.2, 0, 0, 0, wall, 16);
+  b.cyl(r * 1.06, 0.3, 0, r * 1.2 - 0.1, 0, shade(wall, 0.9), 16);
   b.shape('hemi', dome, 0, r * 1.2, 0, r, r, r);
   b.cone(0.2, 1.2, 0, r * 2.2, 0, 0xffcf3f, 6);
-  b.box(1.2, 2, 0.3, 0, 1, r, 0x4a3020);
+  b.sphere(0.3, 0, r * 2.2, 0, 0xffcf3f);
+  // Arched door with a carved frame and a striped awning.
+  b.box(1.5, 2.3, 0.3, 0, 1.15, r - 0.05, shade(wall, 0.85));
+  b.box(1.2, 2.0, 0.3, 0, 1.0, r + 0.02, 0x4a3020);
+  b.addGeo(UNIT.cyl12, 0x4a3020, mat(0, 2.0, r + 0.02, Math.PI / 2, 0, 0, 0.6, 0.3, 0.6));
+  for (let i = 0; i < 4; i++) b.box(0.5, 0.06, 1.1, -0.75 + i * 0.5, 2.75, r + 0.45, i % 2 ? 0xf4ead4 : 0x2f8a8a, 0, 0.35);
+  for (const a of [1.2, -1.2, 2.6]) b.box(0.55, 0.9, 0.15, Math.sin(a) * r, r * 0.75, Math.cos(a) * r, 0x2a2018, a);
 }
 
 export function sandHouse(b: GeoBatch, w: number, h: number, d: number, color: number) {
   b.box(w, h, d, 0, h / 2, 0, color);
-  b.box(w + 0.3, 0.4, d + 0.3, 0, h + 0.2, 0, color);
-  b.box(1, 1.8, 0.2, 0, 0.9, d / 2 + 0.05, 0x3a2a1a);
+  b.box(w + 0.3, 0.4, d + 0.3, 0, h + 0.2, 0, shade(color, 1.06));
+  for (let i = 0; i < Math.floor(w / 0.9); i++) b.box(0.2, 0.2, 0.2, -w / 2 + 0.45 + i * 0.9, h - 0.3, d / 2 + 0.1, shade(color, 0.7));
+  b.box(1.3, 2.1, 0.25, 0, 1.05, d / 2 + 0.02, shade(color, 0.85));
+  b.box(1, 1.8, 0.2, 0, 0.9, d / 2 + 0.08, 0x3a2a1a);
   b.box(0.8, 0.8, 0.2, w / 3, h * 0.7, d / 2 + 0.05, 0x2a2018);
+  b.box(1.0, 0.1, 0.3, w / 3, h * 0.7 - 0.46, d / 2 + 0.15, shade(color, 0.85));
+  // Rooftop clutter: pots, a rug drying and a ladder.
+  b.cyl(0.3, 0.6, -w / 4, h + 0.4, -d / 5, 0xb8643a, 8);
+  b.cyl(0.25, 0.5, -w / 4 + 0.7, h + 0.4, -d / 5 + 0.3, 0xa85a32, 8);
+  b.box(w * 0.4, 0.05, 1.4, w / 5, h + 0.45, 0, 0xb8322a);
+  for (const sx of [-0.3, 0.3]) b.box(0.08, h + 0.6, 0.08, -w / 2 - 0.2 + sx, (h + 0.6) / 2, d / 4, 0x6a4a2a, 0, 0, 0.12);
+  for (let i = 0; i < 5; i++) b.box(0.6, 0.06, 0.06, -w / 2 - 0.15, 0.4 + i * (h / 5), d / 4, 0x6a4a2a);
 }
 
 export function logCabin(b: GeoBatch) {

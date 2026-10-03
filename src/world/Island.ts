@@ -6,7 +6,7 @@ import { Noise2D } from '../core/noise';
 import { clamp, lerp, rng, smoothstep } from '../core/math';
 import * as P from './props';
 import { GeoBatch, mat } from './props';
-import { lavaMaterial, propMaterial, sharedUniforms, terrainMaterial } from './materials';
+import { lavaMaterial, pondMaterial, propMaterial, sharedUniforms, terrainMaterial } from './materials';
 
 export interface Collider { x: number; z: number; r: number }
 export interface ChestSpot { id: string; pos: THREE.Vector3; rotY: number; tier: number }
@@ -45,6 +45,8 @@ export class Island {
   cx: number;
   cz: number;
   R: number;
+  /** A notable spot (e.g. a village) for cameras and quests. */
+  landmark: THREE.Vector3 | null = null;
   half: number;
   N: number;
   cell: number;
@@ -656,8 +658,25 @@ export class Island {
     const lx = this.cx + Math.cos(la) * lr, lz = this.cz + Math.sin(la) * lr;
     const ly = this.place(lx, lz, 0, (b) => P.lighthouse(b), 3.2);
     const lamp = new THREE.PointLight(0xffe2a0, 40, 120, 1.5);
-    lamp.position.set(lx, ly + 19.5, lz);
+    lamp.position.set(lx, ly + 20.8, lz);
     this.decoGroup.add(lamp);
+    // Sweeping lantern beams.
+    const beamGeo = new THREE.CylinderGeometry(0.35, 3.2, 48, 16, 1, true);
+    beamGeo.translate(0, 24, 0);
+    beamGeo.rotateZ(-Math.PI / 2);
+    // Soft volumetric look: fade along the beam and toward its silhouette edges.
+    const beamMat = new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: new THREE.Color(0xfff0b0) } },
+      vertexShader: 'varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
+      fragmentShader: 'uniform vec3 uColor; varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main() { float a = pow(1.0 - vUv.y, 1.6) * pow(abs(dot(normalize(vN), normalize(vV))), 2.0) * 0.22; gl_FragColor = vec4(uColor * a, 1.0); }',
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const beams = new THREE.Group();
+    beams.position.set(lx, ly + 20.8, lz);
+    beams.rotation.x = -Math.PI / 2;
+    for (const r of [0, Math.PI]) { const m = new THREE.Mesh(beamGeo, beamMat); m.rotation.z = r; beams.add(m); }
+    this.decoGroup.add(beams);
+    this.animated.push({ obj: beams, kind: 'spin', speed: 0.7, base: 0 });
     // Villagers.
     const names = ['Old Marlo', 'Fishwife Gretta', 'Little Pip', 'Mayor Hobb', 'Net-mender Suli'];
     for (let i = 0; i < 5; i++) {
@@ -716,6 +735,7 @@ export class Island {
     }
     // Native village of huts (the people Barnacle oppresses).
     const vp = pr(0.3, 0.55, 90);
+    if (vp) this.landmark = new THREE.Vector3(vp[0], this.h(vp[0], vp[1]), vp[1]);
     if (vp) {
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2;
@@ -859,8 +879,25 @@ export class Island {
     }
     // Oasis.
     const op = pr(0.3, 0.6, 70);
+    if (op) this.landmark = new THREE.Vector3(op[0], this.h(op[0], op[1]), op[1]);
     if (op) {
-      const water = new THREE.Mesh(new THREE.CircleGeometry(14, 24), new THREE.MeshStandardMaterial({ color: 0x2fd0c8, roughness: 0.15, metalness: 0.1 }));
+      const pond = pondMaterial();
+      pond.uniforms.uTime = sharedUniforms.uTime;
+      const water = new THREE.Mesh(new THREE.CircleGeometry(15, 40), pond);
+      // Lily pads and reeds dress the edge.
+      const deco = new GeoBatch();
+      for (let i = 0; i < 14; i++) {
+        const a = i * 2.39, r = 7 + (i % 4) * 1.8;
+        deco.cyl(0.5 + (i % 3) * 0.2, 0.04, Math.cos(a) * r, 0.3, Math.sin(a) * r, i % 2 ? 0x3f9a3a : 0x58b04a, 12);
+        if (i % 4 === 0) deco.sphere(0.16, Math.cos(a) * r + 0.2, 0.42, Math.sin(a) * r, 0xff8fb8);
+      }
+      for (let i = 0; i < 40; i++) {
+        const a = i * 0.83, r = 14 + (i % 3) * 0.6;
+        deco.addGeo(new THREE.ConeGeometry(0.06, 1.6 + (i % 5) * 0.3, 4), i % 2 ? 0x6a8a3a : 0x86a04a, mat(Math.cos(a) * r, 0.8, Math.sin(a) * r, (i % 3 - 1) * 0.15, 0, (i % 2 - 0.5) * 0.2));
+      }
+      const decoMesh = new THREE.Mesh(deco.merge(), staticMat);
+      decoMesh.position.set(op[0], this.h(op[0], op[1]), op[1]);
+      this.decoGroup.add(decoMesh);
       water.rotation.x = -Math.PI / 2;
       water.position.set(op[0], this.h(op[0], op[1]) + 0.25, op[1]);
       this.decoGroup.add(water);

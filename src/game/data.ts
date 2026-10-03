@@ -146,7 +146,7 @@ export const ISLANDS: IslandDef[] = [
       'A volcano that never sleeps. Rivers of magma carve the black glass slopes.',
       'Admiral Kazan deserted the Navy and forged an army of ash-clad soldiers in its crater.',
     ],
-    theme: { sand: 0x2f2a2c, grass: 0x48393a, grass2: 0x5c3e32, rock: 0x2a2530, peak: 0x1a171d, path: 0x7a5c46, shallow: 0x3a7f86, fog: 0x9a7f74, skyTop: 0x5a4a5e, skyHorizon: 0xe0a07a, ambient: 'embers', storm: 0.15 },
+    theme: { sand: 0x2a2628, grass: 0x34302f, grass2: 0x46342c, rock: 0x252128, peak: 0x161418, path: 0x6e5444, shallow: 0x3a7f86, fog: 0x6a5458, skyTop: 0x5a4a5e, skyHorizon: 0xe0a07a, ambient: 'embers', storm: 0.15 },
   },
   {
     id: 3, name: 'Frostveil', title: 'Where the Sea Stands Still', style: 'snow',
