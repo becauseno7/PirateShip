@@ -106,9 +106,9 @@ function metrics(style: FaceStyle): FaceMetrics {
   switch (style) {
     case 'hero': return { eyeX: 53, eyeY: 156, eyeW: 60, eyeH: 60, lid: 8, browY: 110, browW: 44, browT: 7, mouthY: 214, noseY: 188 };
     case 'fem': return { eyeX: 53, eyeY: 157, eyeW: 60, eyeH: 62, lid: 8, browY: 111, browW: 40, browT: 4, mouthY: 214, noseY: 189 };
-    case 'brute': return { eyeX: 50, eyeY: 154, eyeW: 44, eyeH: 30, lid: 7, browY: 128, browW: 48, browT: 12, mouthY: 216, noseY: 188 };
-    case 'elder': return { eyeX: 50, eyeY: 154, eyeW: 42, eyeH: 30, lid: 6, browY: 126, browW: 44, browT: 9, mouthY: 214, noseY: 188 };
-    default: return { eyeX: 51, eyeY: 155, eyeW: 50, eyeH: 44, lid: 7, browY: 118, browW: 42, browT: 7, mouthY: 214, noseY: 188 };
+    case 'brute': return { eyeX: 51, eyeY: 154, eyeW: 52, eyeH: 38, lid: 8, browY: 126, browW: 50, browT: 13, mouthY: 216, noseY: 188 };
+    case 'elder': return { eyeX: 51, eyeY: 154, eyeW: 48, eyeH: 36, lid: 7, browY: 124, browW: 46, browT: 10, mouthY: 214, noseY: 188 };
+    default: return { eyeX: 52, eyeY: 155, eyeW: 56, eyeH: 52, lid: 8, browY: 115, browW: 44, browT: 8, mouthY: 214, noseY: 188 };
   }
 }
 
