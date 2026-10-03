@@ -119,17 +119,19 @@ export const GLSL_NOISE = /* glsl */ `
  * Cel-shaded terrain: vertex colors from the island generator, broken up in the fragment shader
  * with world-space noise (sun-bleached patches, clover, dirt speckle) so the ground never reads flat.
  */
-export function terrainMaterial(lava = 0) {
+export function terrainMaterial(lava = 0, snow = 0) {
   const m = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: worldGradient() });
   const uLava = { value: lava };
+  const uSnow = { value: snow };
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uLava = uLava;
+    sh.uniforms.uSnow = uSnow;
     sh.uniforms.uTime = sharedUniforms.uTime;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNrm = normalize(mat3(modelMatrix) * objectNormal);');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform float uLava;\nuniform float uTime;\n' + GLSL_NOISE)
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\nuniform float uSnow;\nuniform float uLava;\nuniform float uTime;\n' + GLSL_NOISE)
       .replace('#include <color_fragment>', `#include <color_fragment>
         {
           vec2 w = vWPos.xz;
@@ -147,6 +149,14 @@ export function terrainMaterial(lava = 0) {
           float strokes = wNoise(vec2(w.x * 2.6 + w.y * 0.9, w.y * 0.7 - w.x * 0.3) * 1.4);
           c *= mix(1.0, 0.8 + 0.2 * strokes, grassy);
           c = mix(c, c * vec3(0.93, 1.02, 0.86), grassy * 0.5);
+          // Rock strata on steep faces; on snowy islands, snow caught along the ledges.
+          float ny = clamp(normalize(vWNrm).y, 0.0, 1.0);
+          float steepK = 1.0 - smoothstep(0.55, 0.85, ny);
+          float strata = wNoise(vec2(w.x * 0.08 + w.y * 0.05, vWPos.y * 0.9));
+          c *= 1.0 + (strata - 0.5) * 0.35 * steepK;
+          float ledge = smoothstep(0.45, 0.62, ny) * smoothstep(0.45, 0.7, wNoise(vec2(w.x * 0.15, vWPos.y * 0.6) + 4.0));
+          float streak = steepK * smoothstep(0.62, 0.8, wNoise(vec2(w.x * 0.35 + w.y * 0.2, vWPos.y * 0.08)));
+          c = mix(c, vec3(0.93, 0.96, 1.0), clamp(ledge + streak * 0.8, 0.0, 1.0) * uSnow);
           float lum = dot(c, vec3(0.299, 0.587, 0.114));
           c = mix(vec3(lum), c, 0.85 + 0.1 * grassy);
           // Snow: cool blue in the low noise, glittering crystals in bright fields.
@@ -178,7 +188,7 @@ export function terrainMaterial(lava = 0) {
           totalEmissiveRadiance += vec3(0.35, 0.06, 0.0) * field * (1.0 - sqrt(d1)) * 0.15 * uLava;
         }`);
   };
-  m.customProgramCacheKey = () => 'terrain-v4';
+  m.customProgramCacheKey = () => 'terrain-v5';
   return m;
 }
 

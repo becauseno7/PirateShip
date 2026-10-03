@@ -6,7 +6,7 @@ import { Noise2D } from '../core/noise';
 import { clamp, lerp, rng, smoothstep } from '../core/math';
 import * as P from './props';
 import { GeoBatch, mat } from './props';
-import { lavaMaterial, pondMaterial, propMaterial, sharedUniforms, terrainMaterial } from './materials';
+import { lavaMaterial, pondMaterial, propMaterial, sharedUniforms, terrainMaterial, worldGradient } from './materials';
 
 export interface Collider { x: number; z: number; r: number }
 export interface ChestSpot { id: string; pos: THREE.Vector3; rotY: number; tier: number }
@@ -17,8 +17,23 @@ interface Seg { ax: number; az: number; bx: number; bz: number }
 
 const terrainMat = terrainMaterial();
 const lavaTerrainMat = terrainMaterial(1);
+const snowTerrainMat = terrainMaterial(0, 1);
 const magmaMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+const UNIT_OCTA = new THREE.OctahedronGeometry(1, 0);
+const UNIT_HEMI_DOWN = new THREE.SphereGeometry(1, 14, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
 const UNIT_RING = new THREE.TorusGeometry(1, 0.12, 5, 14);
+/** Glassy ice: inner glow, bright fresnel edges, a touch of transparency. */
+const iceMat = (() => {
+  const m = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: worldGradient(), emissive: 0x3d7fa8, emissiveIntensity: 0.45, transparent: true, opacity: 0.9 });
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+      float fr = pow(1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0), 2.2);
+      outgoingLight += vec3(0.75, 0.92, 1.0) * fr * 0.7;
+      #include <opaque_fragment>`);
+  };
+  m.customProgramCacheKey = () => 'ice-v1';
+  return m;
+})();
 const staticMat = propMaterial(0);
 const swayMat = propMaterial(0.11);
 const grassMat = propMaterial(0.9);
@@ -93,6 +108,7 @@ export class Island {
   firePositions: THREE.Vector3[] = [];
   private batch = new GeoBatch();
   private glowBatch = new GeoBatch();
+  private iceBatch = new GeoBatch();
   decoVisible = true;
   /** Height (R) and grass coverage (G) per grid vertex, sampled by the grass shader. */
   grassTex: THREE.DataTexture | null = null;
@@ -422,7 +438,7 @@ export class Island {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
     geo.deleteAttribute('uv');
-    this.terrain = new THREE.Mesh(geo, this.def.style === 'volcano' ? lavaTerrainMat : terrainMat);
+    this.terrain = new THREE.Mesh(geo, this.def.style === 'volcano' ? lavaTerrainMat : this.def.style === 'snow' ? snowTerrainMat : terrainMat);
     this.terrain.position.set(this.cx, 0, this.cz);
     this.terrain.receiveShadow = true;
     this.group.add(this.terrain);
@@ -509,6 +525,13 @@ export class Island {
     b.pop();
     if (colR > 0) this.addCollider(x, z, colR);
     return y;
+  }
+  private placeIce(x: number, z: number, ry: number, build: (b: GeoBatch) => void, colR = 0) {
+    const y = this.minHeightAround(x, z, Math.max(2, colR * 0.7)) - 0.3;
+    this.iceBatch.push(mat(x - this.cx, y, z - this.cz, 0, ry, 0));
+    build(this.iceBatch);
+    this.iceBatch.pop();
+    if (colR > 0) this.addCollider(x, z, colR);
   }
   private minHeightAround(x: number, z: number, r: number) {
     let m = this.h(x, z);
@@ -806,13 +829,58 @@ export class Island {
     for (let i = 0; i < 24; i++) {
       const p = pr(0.15, 0.95, 20);
       if (!p) continue;
-      this.place(p[0], p[1], p[2], (b) => b.addGeo(P.crystal(0x9fe6ff), 0x9fe6ff, mat(0, 0, 0, 0, 0, 0, 1.2 + (i % 3) * 0.6, 1.5 + (i % 4) * 0.6, 1.2 + (i % 3) * 0.6)), 1.5);
+      this.placeIce(p[0], p[1], p[2], (b) => b.addGeo(P.crystal(0xbfefff), 0xbfefff, mat(0, 0, 0, 0, 0, 0, 1.2 + (i % 3) * 0.6, 1.5 + (i % 4) * 0.6, 1.2 + (i % 3) * 0.6)), 1.5);
+    }
+    // Ice spires rising from the frozen shallows.
+    for (let i = 0; i < 30; i++) {
+      const a = this.rand() * Math.PI * 2;
+      const r = this.coastRadius(a) * (1.02 + this.rand() * 0.12);
+      const x = this.cx + Math.cos(a) * r, z = this.cz + Math.sin(a) * r;
+      const h = 4 + this.rand() * 9;
+      this.iceBatch.push(mat(x - this.cx, -1, z - this.cz, 0, this.rand() * 6, 0));
+      this.iceBatch.addGeo(UNIT_OCTA, 0xd8f4ff, mat(0, h * 0.4, 0, 0.1, 0, 0.08, h * 0.16, h * 0.8, h * 0.14));
+      this.iceBatch.addGeo(UNIT_OCTA, 0xb8e6fb, mat(h * 0.14, h * 0.25, 0.3, 0, 0, -0.35, h * 0.09, h * 0.5, h * 0.09));
+      this.iceBatch.pop();
+    }
+    // A pirate ship frozen fast in the pack ice, a warning to anyone sailing in.
+    {
+      const a = this.dockDir + 1.5;
+      const r = this.coastRadius(a) * 1.05;
+      const x = this.cx + Math.cos(a) * r, z = this.cz + Math.sin(a) * r;
+      const ry = -a + 0.4;
+      this.batch.push(mat(x - this.cx, -0.6, z - this.cz, 0.12, ry, 0.22));
+      const b = this.batch;
+      b.addGeo(UNIT_HEMI_DOWN, 0x4a3020, mat(0, 1.6, 0, 0, 0, 0, 3.4, 3.0, 10));
+      b.box(6.2, 0.3, 17, 0, 1.6, 0, 0x7a5a38);
+      b.box(6.4, 0.25, 17.4, 0, 2.4, 0, 0x5a1a1a);
+      b.box(5.4, 2.2, 4, 0, 2.7, -6.5, 0x4a3020);
+      b.taper(0.35, 0.22, 9, 0, 1.6, 1, 0x6a4a30, 8);
+      b.taper(0.28, 0.18, 4.5, 0, 1.6, 5.5, 0x6a4a30, 8, 0.5, 0, 0.2);
+      b.addGeo(P.UNIT.box, 0x6a4a30, mat(0, 9.4, 1, 0, 0, Math.PI / 2 - 0.15, 0.16, 6.5, 0.16));
+      b.box(5.4, 3.2, 0.08, 0.3, 7.6, 1.2, 0x2a2626, 0, 0, -0.15);
+      b.box(3.2, 1.8, 0.08, -0.6, 5.0, 1.2, 0x2a2626, 0, 0.2, 0.1);
+      b.pop();
+      this.iceBatch.push(mat(x - this.cx, 0, z - this.cz, 0, ry, 0));
+      for (let k = 0; k < 12; k++) {
+        const t = k / 12 * Math.PI * 2;
+        this.iceBatch.addGeo(UNIT_OCTA, k % 2 ? 0xd8f4ff : 0xeefaff, mat(Math.cos(t) * 4.4, 0.6, Math.sin(t) * 10.5, 0.2 * Math.sin(t * 3), 0, 0.3 * Math.cos(t * 2), 1.6, 2.2 + (k % 3), 1.4));
+      }
+      this.iceBatch.addGeo(P.UNIT.cyl8, 0xe8f6fc, mat(0, 0.2, 0, 0, 0, 0, 7, 0.8, 13));
+      for (let k = 0; k < 8; k++) this.iceBatch.addGeo(UNIT_OCTA, 0xd8f4ff, mat(-2.6 + k * 0.75, 2.0 - (k % 3) * 0.2, 0, Math.PI, 0, 0, 0.08, 0.5 + (k % 3) * 0.3, 0.08));
+      this.iceBatch.pop();
+      this.addCollider(x, z, 7);
     }
     // Throne of ice behind the arena.
     if (this.arena) {
       const A = this.arena, back = this.dockDir + Math.PI;
       const tx = A.pos.x + Math.cos(back) * (A.radius - 6), tz = A.pos.z + Math.sin(back) * (A.radius - 6);
-      this.place(tx, tz, -back + Math.PI / 2 - Math.PI / 2, (b) => { b.box(10, 2, 8, 0, 1, 0, 0xcfefff); b.box(8, 12, 2, 0, 8, -3, 0xbfe8ff); b.box(2, 5, 6, -4, 4.5, 0, 0xbfe8ff); b.box(2, 5, 6, 4, 4.5, 0, 0xbfe8ff); }, 6);
+      this.placeIce(tx, tz, -back, (b) => {
+        b.box(11, 2, 9, 0, 1, 0, 0xcfefff);
+        b.box(9, 1.2, 7, 0, 2.6, 0.4, 0xdff6ff);
+        b.box(8, 10, 2.2, 0, 8, -3, 0xbfe8ff);
+        for (const sx of [-1, 1]) { b.box(2, 4, 6, sx * 4, 5, 0, 0xbfe8ff); b.addGeo(UNIT_OCTA, 0xd8f4ff, mat(sx * 4, 8, 2.2, 0, 0, sx * 0.3, 0.6, 2.4, 0.6)); }
+        for (let k = 0; k < 7; k++) { const x = -4.2 + k * 1.4, h = 5 + (3 - Math.abs(k - 3)) * 2.2; b.addGeo(UNIT_OCTA, k % 2 ? 0xeefaff : 0xbfe8ff, mat(x, 13 + h * 0.4, -3, 0, 0, (k - 3) * -0.12, 0.6, h, 0.6)); }
+      }, 6);
     }
   }
 
@@ -1227,6 +1295,13 @@ export class Island {
       m.position.set(this.cx, 0, this.cz);
       m.castShadow = true;
       m.receiveShadow = true;
+      this.decoGroup.add(m);
+    }
+    const ig = this.iceBatch.merge();
+    if (ig.attributes.position) {
+      const m = new THREE.Mesh(ig, iceMat);
+      m.position.set(this.cx, 0, this.cz);
+      m.castShadow = true;
       this.decoGroup.add(m);
     }
     const gg = this.glowBatch.merge();

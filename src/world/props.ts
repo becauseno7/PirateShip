@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-const UNIT = {
+export const UNIT = {
   box: new THREE.BoxGeometry(1, 1, 1).toNonIndexed(),
   cyl6: new THREE.CylinderGeometry(1, 1, 1, 6).toNonIndexed(),
   cyl8: new THREE.CylinderGeometry(1, 1, 1, 8).toNonIndexed(),
@@ -789,7 +789,16 @@ export function logCabin(b: GeoBatch) {
 
 export function igloo(b: GeoBatch) {
   b.shape('hemi', 0xf0f6fb, 0, 0, 0, 3, 2.6, 3);
-  b.addGeo(UNIT.cyl12, 0xe4eef6, mat(0, 0.9, 2.8, Math.PI / 2, 0, 0, 1, 1.6, 1));
+  // Snow-block courses and staggered joints.
+  for (let i = 1; i < 5; i++) {
+    const t = i / 5, ry = Math.sin(t * Math.PI / 2) * 2.6, rr = Math.cos(t * Math.PI / 2) * 3;
+    b.addGeo(UNIT.torus, 0xd2e2ee, mat(0, ry, 0, Math.PI / 2, 0, 0, rr + 0.02, rr + 0.02, 0.18));
+    const n = Math.max(3, Math.round(rr * 3));
+    for (let k = 0; k < n; k++) { const a = ((k + (i % 2) * 0.5) / n) * Math.PI * 2; b.box(0.06, 0.5, 0.06, Math.cos(a) * rr * 1.0, ry - 0.3, Math.sin(a) * rr * 1.0, 0xd2e2ee); }
+  }
+  b.addGeo(UNIT.cyl12, 0xe4eef6, mat(0, 0.9, 2.8, Math.PI / 2, 0, 0, 1.1, 1.6, 1.1));
+  b.addGeo(UNIT.cyl12, 0x2a3440, mat(0, 0.8, 3.62, Math.PI / 2, 0, 0, 0.75, 0.05, 0.75));
+  b.box(2.6, 0.1, 1.6, 0, 0.05, 4.3, 0xa8582a);
 }
 
 export function arch(b: GeoBatch, w: number, h: number, color: number) {
