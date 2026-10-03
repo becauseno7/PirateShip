@@ -14,6 +14,19 @@ export function toonGradient() {
   return toonGrad;
 }
 
+let skinGrad: THREE.DataTexture | null = null, clothGrad: THREE.DataTexture | null = null;
+function grad(v: number[]) {
+  const data = new Uint8Array(v.flatMap((x) => [x, x, x, 255]));
+  const t = new THREE.DataTexture(data, v.length, 1, THREE.RGBAFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter;
+  t.needsUpdate = true;
+  return t;
+}
+/** Anime skin: a light, two-tone shadow so faces never go muddy. */
+export function skinGradient() { return (skinGrad ??= grad([196, 224, 250, 255])); }
+/** Character cloth: readable shadow side without crushing colour. */
+export function clothGradient() { return (clothGrad ??= grad([128, 184, 240, 255])); }
+
 const toonCache = new Map<string, THREE.MeshToonMaterial>();
 export function toon(color: number | string, opts: { emissive?: number; emissiveIntensity?: number; transparent?: boolean; opacity?: number } = {}) {
   const key = String(color) + JSON.stringify(opts);

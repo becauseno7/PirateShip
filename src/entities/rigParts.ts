@@ -37,6 +37,19 @@ export function headPoint(th: number, ph: number, r: number, jaw: number) {
   return deformPoint(new THREE.Vector3(r * Math.sin(th) * Math.sin(ph), r * Math.cos(th), r * Math.sin(th) * Math.cos(ph)), r, jaw);
 }
 
+/** Anime face shading: bend normals toward a sphere so the jaw doesn't throw a hard shadow band across the face. */
+function softNormals(geo: THREE.BufferGeometry, r: number, k = 0.72) {
+  const p = geo.attributes.position as THREE.BufferAttribute, n = geo.attributes.normal as THREE.BufferAttribute;
+  const v = new THREE.Vector3(), s = new THREE.Vector3(), c = new THREE.Vector3(0, r * 0.12, -r * 0.08);
+  for (let i = 0; i < p.count; i++) {
+    s.fromBufferAttribute(p, i).sub(c).normalize();
+    v.fromBufferAttribute(n, i).lerp(s, k).normalize();
+    n.setXYZ(i, v.x, v.y, v.z);
+  }
+  n.needsUpdate = true;
+  return geo;
+}
+
 const headCache = new Map<string, THREE.BufferGeometry>();
 export function headGeometry(r: number, jaw: number) {
   const k = r.toFixed(3) + jaw.toFixed(2);
@@ -46,6 +59,7 @@ export function headGeometry(r: number, jaw: number) {
     s.deleteAttribute('uv');
     g = mergeVertices(deformHead(s, r, jaw));
     g.computeVertexNormals();
+    softNormals(g, r);
     headCache.set(k, g);
   }
   return g;
@@ -61,6 +75,7 @@ export function faceGeometry(r: number, jaw: number) {
     const rr = r * 1.006;
     g = deformHead(new THREE.SphereGeometry(rr, 30, 22, Math.PI / 2 - FACE_PHI / 2, FACE_PHI, FACE_T0, FACE_TL), rr, jaw);
     g.computeVertexNormals();
+    softNormals(g, rr);
     faceGeoCache.set(k, g);
   }
   return g;

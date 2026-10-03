@@ -1,6 +1,6 @@
 // Procedurally built, procedurally animated anime-style character rig.
 import * as THREE from 'three';
-import { toonGradient, charOutlineMat, sharedUniforms, strawTexture } from '../world/materials';
+import { clothGradient, skinGradient, charOutlineMat, sharedUniforms, strawTexture } from '../world/materials';
 import { EXPR, Expr, FaceOpts, FaceStyle, atlasView, beardGeometry, faceAtlas, faceGeometry, fistGeometry, hairGeometry, headGeometry, headPoint, setAtlasCell, shell } from './rigParts';
 
 // Flickering rim-lit flame aura for awakened fighters.
@@ -327,8 +327,8 @@ export class Humanoid {
     this.root.scale.setScalar(this.scale);
   }
 
-  private mat(color: string | number) {
-    const m = new THREE.MeshToonMaterial({ color: new THREE.Color(color as any), gradientMap: toonGradient() });
+  private mat(color: string | number, skin = false) {
+    const m = new THREE.MeshToonMaterial({ color: new THREE.Color(color as any), gradientMap: skin ? skinGradient() : clothGradient() });
     rimLight(m);
     this.mats.push(m);
     return m;
@@ -348,7 +348,7 @@ export class Humanoid {
     const sb = Math.sqrt(b);
     const belly = L.belly ?? 0;
     const bl = belly * 0.07, bl2 = belly * 0.1;
-    const skin = this.mat(L.skin), shirt = this.mat(L.shirt), pants = this.mat(L.pants), shoes = this.mat(L.shoes ?? 0x3a2a1e);
+    const skin = this.mat(L.skin, true), shirt = this.mat(L.shirt), pants = this.mat(L.pants), shoes = this.mat(L.shoes ?? 0x3a2a1e);
     this.skinMat = skin;
     const hairM = this.mat(L.hair);
     this.hairMat = hairM;
@@ -429,7 +429,7 @@ export class Humanoid {
       plate.rotation.y = Math.PI;
     }
     if (L.cape) {
-      const cm = new THREE.MeshToonMaterial({ color: new THREE.Color(L.cape as any), gradientMap: toonGradient(), side: THREE.DoubleSide });
+      const cm = new THREE.MeshToonMaterial({ color: new THREE.Color(L.cape as any), gradientMap: clothGradient(), side: THREE.DoubleSide });
       this.mats.push(cm);
       const cape = new THREE.Mesh(shell([[-1.05, 0.36 * b, 0.33 * b], [-0.6, 0.31 * b, 0.27 * b], [-0.2, 0.27 * b, 0.2 * b], [0.08, 0.275 * b, 0.17 * b], [0.16, 0.23 * b, 0.145 * b], [0.21, 0.15 * b, 0.11 * b]], (y) => 0.75 + clamp(-y, 0, 1) * 0.25, 30), cm);
       cape.castShadow = true;
@@ -454,7 +454,7 @@ export class Humanoid {
       style, iris: L.iris ?? (style === 'hero' ? '#5a3a24' : '#3a2a20'), brow: '#' + new THREE.Color(hairHex).multiplyScalar(0.75).getHexString(),
       skin: '#' + new THREE.Color(L.skin as any).getHexString(), scar: !!L.scar, glow: L.eyeGlow ? '#' + new THREE.Color(L.eyeGlow).getHexString() : null,
     };
-    this.faceMat = new THREE.MeshToonMaterial({ gradientMap: toonGradient(), transparent: true, alphaTest: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    this.faceMat = new THREE.MeshToonMaterial({ gradientMap: skinGradient(), transparent: true, alphaTest: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     rimLight(this.faceMat);
     this.paintFace();
     const face = new THREE.Mesh(faceGeometry(R, jaw), this.faceMat);
@@ -500,16 +500,22 @@ export class Humanoid {
       }
       const ft = g(side === 1 ? 'ftL' : 'ftR', kn, 0, -0.43, 0);
       if (sandals) {
-        const foot = this.mesh(new THREE.SphereGeometry(1, 14, 10), skin, ft, 0, -0.035, 0.055);
-        foot.scale.set(0.048, 0.034, 0.12);
-        for (let i = 0; i < 4; i++) {
-          const toe = this.mesh(new THREE.SphereGeometry(1, 8, 6), skin, ft, side * (0.026 - i * 0.017), -0.045, 0.16 - i * 0.008, false);
-          toe.scale.setScalar(i === 0 ? 0.019 : 0.014);
+        // Bare foot: rounded heel, raised instep and toes on an oval straw sandal with a thong strap.
+        const foot = this.mesh(new THREE.SphereGeometry(1, 16, 12), skin, ft, 0, -0.03, 0.05);
+        foot.scale.set(0.044, 0.042, 0.105);
+        foot.rotation.x = 0.12;
+        const heel = this.mesh(new THREE.SphereGeometry(0.036, 10, 8), skin, ft, 0, -0.04, -0.02, false);
+        heel.scale.set(1, 0.9, 1.1);
+        for (let i = 0; i < 5; i++) {
+          const toe = this.mesh(new THREE.SphereGeometry(1, 8, 6), skin, ft, side * (0.026 - i * 0.0125), -0.052, 0.142 - i * i * 0.0022, false);
+          toe.scale.setScalar(i === 0 ? 0.016 : 0.0115 - i * 0.0006);
         }
-        this.mesh(new THREE.BoxGeometry(0.108, 0.022, 0.25), shoes, ft, 0, -0.068, 0.055);
+        const sole = this.mesh(new THREE.CylinderGeometry(1, 1, 1, 18), shoes, ft, side * 0.002, -0.068, 0.058);
+        sole.scale.set(0.056, 0.016, 0.135);
+        const strapM = this.mat(0x6a3a1c);
         for (const sx of [-1, 1]) {
-          const strap = this.mesh(new THREE.BoxGeometry(0.012, 0.012, 0.09), this.mat(0x7a4a24), ft, sx * 0.022, -0.02, 0.1, false);
-          strap.rotation.y = sx * 0.55;
+          const strap = this.mesh(new THREE.BoxGeometry(0.01, 0.01, 0.085), strapM, ft, sx * 0.024, -0.03, 0.095, false);
+          strap.rotation.set(0.35, sx * 0.5, 0);
         }
       } else {
         const boot = this.mesh(capsule(0.058 * sb, 0.12), shoes, ft, 0, -0.025, 0.055);
@@ -606,7 +612,7 @@ export class Humanoid {
         break;
       }
       case 'crown': {
-        const m = new THREE.MeshToonMaterial({ color: 0xffd54a, emissive: 0x6a4a00, gradientMap: toonGradient() });
+        const m = new THREE.MeshToonMaterial({ color: 0xffd54a, emissive: 0x6a4a00, gradientMap: clothGradient() });
         this.mats.push(m);
         this.mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 16, 1, true), m, head, 0, 0.36, 0);
         for (let i = 0; i < 8; i++) {
@@ -626,7 +632,9 @@ export class Humanoid {
 
   private weapon(kind: Weapon, color: number): THREE.Object3D {
     const g = new THREE.Group();
-    const steel = this.mat(color);
+    const sc = new THREE.Color(color), lum = sc.r * 0.3 + sc.g * 0.59 + sc.b * 0.11;
+    if (lum > 0.42) sc.multiplyScalar(0.42 / lum);
+    const steel = this.mat(sc.getHex());
     const edge = this.mat(new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.55).getHex());
     const dark = this.mat(0x2a1a12);
     const wrap = this.mat(0x3a2418);
