@@ -166,10 +166,17 @@ export function terrainMaterial(lava = 0, snow = 0) {
           float ny = clamp(normalize(vWNrm).y, 0.0, 1.0);
           float steepK = 1.0 - smoothstep(0.55, 0.85, ny);
           float strata = wNoise(vec2(w.x * 0.08 + w.y * 0.05, vWPos.y * 0.9));
-          c *= 1.0 + (strata - 0.5) * 0.35 * steepK;
-          float ledge = smoothstep(0.45, 0.62, ny) * smoothstep(0.45, 0.7, wNoise(vec2(w.x * 0.15, vWPos.y * 0.6) + 4.0));
-          float streak = steepK * smoothstep(0.62, 0.8, wNoise(vec2(w.x * 0.35 + w.y * 0.2, vWPos.y * 0.08)));
-          c = mix(c, vec3(0.93, 0.96, 1.0), clamp(ledge + streak * 0.8, 0.0, 1.0) * uSnow);
+          c *= 1.0 + (strata - 0.5) * 0.35 * steepK * (1.0 - uSnow);
+          // Alpine: broad snowfields on anything walkable, blue-grey stratified rock on the cliffs,
+          // with snow caught in the cliff ledges and gullies.
+          float cover = smoothstep(0.42, 0.6, ny + (wFbm(w * 0.06) - 0.5) * 0.3);
+          float strataW = wNoise(vec2(w.x * 0.05 + w.y * 0.03, vWPos.y * 0.35 + wNoise(w * 0.04) * 2.0));
+          vec3 rockC = vec3(0.27, 0.31, 0.4) * (0.84 + 0.32 * strataW) * (0.9 + 0.2 * mid);
+          vec3 snowC = vec3(0.93, 0.96, 1.0);
+          float ledge = (1.0 - cover) * smoothstep(0.7, 0.85, wNoise(w * 0.09 + vec2(4.0, vWPos.y * 0.12)));
+          float streak = steepK * smoothstep(0.66, 0.82, wNoise(vec2(w.x * 0.35 + w.y * 0.2, vWPos.y * 0.08)));
+          vec3 alp = mix(rockC, snowC, clamp(cover + ledge * 0.85 + streak * 0.6, 0.0, 1.0));
+          c = mix(c, alp, uSnow);
           float lum = dot(c, vec3(0.299, 0.587, 0.114));
           c = mix(vec3(lum), c, 0.85 + 0.1 * grassy);
           // Snow: cool blue in the low noise, glittering crystals in bright fields.
@@ -201,7 +208,7 @@ export function terrainMaterial(lava = 0, snow = 0) {
           totalEmissiveRadiance += vec3(0.35, 0.06, 0.0) * field * (1.0 - sqrt(d1)) * 0.15 * uLava;
         }`);
   };
-  m.customProgramCacheKey = () => 'terrain-v5';
+  m.customProgramCacheKey = () => 'terrain-v6';
   return m;
 }
 
