@@ -149,6 +149,11 @@ export function terrainMaterial(lava = 0) {
           c = mix(c, c * vec3(0.93, 1.02, 0.86), grassy * 0.5);
           float lum = dot(c, vec3(0.299, 0.587, 0.114));
           c = mix(vec3(lum), c, 0.85 + 0.1 * grassy);
+          // Snow: cool blue in the low noise, glittering crystals in bright fields.
+          float snowy = smoothstep(0.72, 0.85, lum) * (1.0 - grassy) * (1.0 - sandy * 0.8);
+          c = mix(c, c * vec3(0.86, 0.93, 1.04), snowy * smoothstep(0.55, 0.3, mid) * 0.8);
+          float glit = step(0.985, wHash(floor(w * 3.0))) * snowy;
+          c += vec3(0.5, 0.6, 0.7) * glit;
           diffuseColor.rgb = c;
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -163,7 +168,7 @@ export function terrainMaterial(lava = 0) {
           totalEmissiveRadiance += mix(vec3(1.0, 0.25, 0.03), vec3(1.0, 0.75, 0.3), smoothstep(0.6, 1.2, vein)) * vein * mask * pulse * uLava * 1.6;
         }`);
   };
-  m.customProgramCacheKey = () => 'terrain-v3';
+  m.customProgramCacheKey = () => 'terrain-v4';
   return m;
 }
 

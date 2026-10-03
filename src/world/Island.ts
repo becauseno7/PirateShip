@@ -18,6 +18,7 @@ interface Seg { ax: number; az: number; bx: number; bz: number }
 const terrainMat = terrainMaterial();
 const lavaTerrainMat = terrainMaterial(1);
 const magmaMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+const UNIT_RING = new THREE.TorusGeometry(1, 0.12, 5, 14);
 const staticMat = propMaterial(0);
 const swayMat = propMaterial(0.11);
 const grassMat = propMaterial(0.9);
@@ -38,6 +39,20 @@ function beaconFade() {
   g.fillStyle = gr; g.fillRect(0, 0, 4, 128);
   beaconTex = new THREE.CanvasTexture(c);
   return beaconTex;
+}
+
+let glowTex: THREE.CanvasTexture | null = null;
+/** Soft radial glow for fires and lamps. */
+function glowTexture() {
+  if (glowTex) return glowTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.25, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  glowTex = new THREE.CanvasTexture(c);
+  return glowTex;
 }
 
 export class Island {
@@ -806,7 +821,21 @@ export class Island {
     const A = this.arena;
     const wallR = A.radius + 30;
     const segs = 20;
-    const stone = 0x45454e;
+    const stone = 0x6c6a74;
+    const fire = new GeoBatch();
+    fire.jitter = 0;
+    const glowMat = new THREE.SpriteMaterial({ map: glowTexture(), color: 0xff9a4a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85 });
+    const flame = (x: number, y: number, z: number, s = 1) => {
+      for (let k = 0; k < 4; k++) {
+        const a = k * 1.7, off = k ? 0.22 * s : 0;
+        fire.addGeo(new THREE.ConeGeometry((k ? 0.26 : 0.4) * s, (k ? 1.0 : 1.6) * s, 6), k ? 0xff6a1a : 0xff9a3a, mat(x + Math.cos(a) * off, y + (k ? 0.45 : 0.75) * s, z + Math.sin(a) * off, Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25));
+      }
+      fire.addGeo(new THREE.ConeGeometry(0.2 * s, 0.9 * s, 6), 0xfff0b0, mat(x, y + 0.5 * s, z));
+      const glow = new THREE.Sprite(glowMat);
+      glow.position.set(x, y + 0.9 * s, z);
+      glow.scale.setScalar(5 * s);
+      this.decoGroup.add(glow);
+    };
     for (let i = 0; i < segs; i++) {
       const a0 = (i / segs) * Math.PI * 2, a1 = ((i + 1) / segs) * Math.PI * 2;
       const am = (a0 + a1) / 2;
@@ -816,30 +845,71 @@ export class Island {
       const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
       const len = Math.hypot(x1 - x0, z1 - z0);
       if (toDock > 0.22) {
-        this.place(mx, mz, -am + Math.PI / 2, (b) => P.wallSegment(b, len + 1, 12, stone, 3), 0, 1.5);
+        this.place(mx, mz, -am + Math.PI / 2, (b) => {
+          P.wallSegment(b, len + 1, 12, stone, 3);
+          // War banners on the outer face and a brazier on the walk.
+          for (const bx of [-len / 4, len / 4]) {
+            b.box(2.2, 6.5, 0.12, bx, 7.6, 1.62, 0x7a1418);
+            b.box(2.2, 0.35, 0.16, bx, 10.7, 1.64, 0xd8a03a);
+            b.box(0.5, 0.5, 0.18, bx, 7.8, 1.66, 0xd8a03a, 0, 0, Math.PI / 4);
+            b.cone(1.1, 0.9, bx, 3.9, 1.62, 0x7a1418, 4, Math.PI, Math.PI / 4);
+          }
+          if (i % 2 === 1) { b.cyl(0.7, 0.6, 0, 12.0, 0, 0x2a2a30, 8); b.cyl(0.25, 1.2, 0, 12.6, 0, 0x2a2a30, 6); }
+        }, 0, 1.5);
+        if (i % 2 === 1) { const y = this.h(mx, mz) + 13.2; flame(mx, y, mz, 1.1); }
         for (let k = -2; k <= 2; k++) this.addCollider(mx + (x1 - x0) * k / 5, mz + (z1 - z0) * k / 5, 2.4);
       }
       if (i % 2 === 0) this.place(x0, z0, 0, (b) => P.tower(b, 4, 18, stone, 0x6a1a1a), 4.6, 1.5);
     }
-    // Gate towers.
+    // Gate towers and a gatehouse arch with a portcullis.
     for (const s of [-1, 1]) {
       const a = this.dockDir + s * 0.24;
-      this.place(A.pos.x + Math.cos(a) * wallR, A.pos.z + Math.sin(a) * wallR, 0, (b) => P.tower(b, 5, 24, stone, 0x6a1a1a), 5.6, 1.5);
+      const gx = A.pos.x + Math.cos(a) * wallR, gz = A.pos.z + Math.sin(a) * wallR;
+      this.place(gx, gz, 0, (b) => P.tower(b, 5, 24, stone, 0x6a1a1a), 5.6, 1.5);
+      flame(gx + Math.cos(this.dockDir) * 6.2, this.h(gx, gz) + 9, gz + Math.sin(this.dockDir) * 6.2, 1.4);
+    }
+    {
+      const gx = A.pos.x + Math.cos(this.dockDir) * wallR, gz = A.pos.z + Math.sin(this.dockDir) * wallR;
+      const span = 2 * wallR * Math.sin(0.24) - 9;
+      this.place(gx, gz, -this.dockDir + Math.PI / 2, (b) => {
+        b.box(span, 5, 4, 0, 15.5, 0, stone);
+        for (let k = 0; k < 6; k++) b.box(span / 6 * 0.7, 1.4, 4.4, -span / 2 + (k + 0.5) * (span / 6), 18.7, 0, stone);
+        b.box(span, 0.5, 4.6, 0, 13.1, 0, 0x55535c);
+        for (let k = 0; k < 9; k++) b.box(0.18, 6, 0.18, -span / 2 + 1 + k * ((span - 2) / 8), 10, 0.6, 0x2a2a30);
+        for (let k = 0; k < 3; k++) b.box(span - 1.5, 0.18, 0.18, 0, 8.2 + k * 1.8, 0.6, 0x2a2a30);
+        b.box(3, 4.5, 0.2, 0, 15.5, 2.12, 0x7a1418);
+        b.box(1.4, 1.4, 0.24, 0, 15.8, 2.16, 0xd8a03a, 0, 0, Math.PI / 4);
+      }, 0, 1.5);
+      const gl = new THREE.PointLight(0xff8a3a, 30, 60, 1.6);
+      gl.position.set(gx + Math.cos(this.dockDir) * 6, this.h(gx, gz) + 10, gz + Math.sin(this.dockDir) * 6);
+      this.decoGroup.add(gl);
+      this.animated.push({ obj: gl, kind: 'flicker', speed: 1, base: 30 });
     }
     // Great keep behind the arena.
     const back = this.dockDir + Math.PI;
-    this.place(A.pos.x + Math.cos(back) * (A.radius + 14), A.pos.z + Math.sin(back) * (A.radius + 14), 0, (b) => { P.tower(b, 9, 40, 0x3a3a42, 0x7a1a1a); }, 10, 1.5);
+    const kx = A.pos.x + Math.cos(back) * (A.radius + 14), kz = A.pos.z + Math.sin(back) * (A.radius + 14);
+    this.place(kx, kz, 0, (b) => {
+      P.tower(b, 9, 40, 0x5a5862, 0x7a1a1a);
+      b.box(26, 22, 26, 0, 11, 0, 0x5a5862);
+      for (let k = 0; k < 10; k++) b.box(2.2, 1.6, 26.6, -11.7 + k * 2.6, 22.8, 0, 0x5a5862);
+      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { b.pushT(sx * 13, 0, sz * 13); P.tower(b, 3.2, 28, 0x5a5862, 0x7a1a1a); b.pop(); }
+      for (let k = 0; k < 4; k++) b.box(3, 14, 0.2, -6 + k * 4, 13, 13.12, k % 2 ? 0x7a1418 : 0x5a0e12);
+    }, 15, 1.5);
+    flame(kx, this.h(kx, kz) + 42.5, kz, 2.2);
     // Lightning rods across the rock.
     for (let i = 0; i < 12; i++) {
       const p = pr(0.2, 0.9, 30);
       if (!p) continue;
-      this.place(p[0], p[1], p[2], (b) => { b.cyl(0.25, 16, 0, 0, 0, 0x6a6a72, 6); b.sphere(0.6, 0, 16.4, 0, 0x9ab0c8); b.box(2, 1, 2, 0, 0.5, 0, 0x3a3a42); }, 1.2);
+      this.place(p[0], p[1], p[2], (b) => { b.cyl(0.25, 16, 0, 0, 0, 0x6a6a72, 6); b.box(2, 1, 2, 0, 0.5, 0, 0x3a3a42); for (let k = 0; k < 3; k++) b.addGeo(UNIT_RING, 0x8a8a92, mat(0, 13 + k * 1.1, 0, Math.PI / 2, 0, 0, 0.7 - k * 0.15, 0.7 - k * 0.15, 0.5)); }, 1.2);
+      fire.addGeo(new THREE.IcosahedronGeometry(0.6, 1), 0x9ad8ff, mat(p[0], this.h(p[0], p[1]) + 16.4, p[1]));
     }
     for (let i = 0; i < 8; i++) {
       const p = pr(0.3, 0.85, 40);
       if (!p) continue;
       this.place(p[0], p[1], p[2], (b) => P.watchtower(b, 0x4a3a2a), 2.6);
     }
+    const fm = new THREE.Mesh(fire.merge(), magmaMat);
+    this.decoGroup.add(fm);
     this.captive(['Gorrath has crushed every crew that came for him. Every. Single. One.', 'They say he can\'t be hurt... unless something in you wakes up. Something old.'], 'Prisoner Vey', pr(0.3, 0.6, 60));
   }
 
@@ -1201,6 +1271,7 @@ export class Island {
     for (const a of this.animated) {
       if (a.kind === 'spin') a.obj.rotation.z += dt * a.speed;
       else if (a.kind === 'bob') { a.obj.position.y = a.base + Math.sin(time * a.speed) * 3; a.obj.rotation.y += dt * 0.05; }
+      else if (a.kind === 'flicker') (a.obj as THREE.PointLight).intensity = a.base * (0.82 + 0.12 * Math.sin(time * 13.0) + 0.06 * Math.sin(time * 31.0));
     }
   }
 }
