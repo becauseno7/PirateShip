@@ -347,7 +347,7 @@ export class Environment {
     this.sun.intensity = lerp(2.8, 0.55, this.night) * (1 - storm * 0.55) * (1 - this.darken * 0.6) * (0.55 + 0.45 * Math.min(1, dayF + this.night));
     this.hemi.color.copy(c.top).lerp(new THREE.Color(1, 1, 1), 0.3);
     this.hemi.groundColor.setHex(0x5a5038).lerp(new THREE.Color(0x101420), this.night);
-    this.hemi.intensity = lerp(0.95, 0.55, this.night) * (1 - storm * 0.25);
+    this.hemi.intensity = lerp(0.95, 0.55, this.night) * (1 - storm * 0.12);
     this.ambient.intensity = 0.12 + this.night * 0.12;
 
     // Clouds tint: the shadowed undersides take on the sky colour instead of going grey.

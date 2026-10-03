@@ -212,7 +212,7 @@ export function palmTree(): THREE.BufferGeometry {
     b.addGeo(UNIT.torus, 0x6e5232, mat(x, y + 0.02, 0, Math.PI / 2, 0, -ang, r * 0.98, r * 0.98, r * 1.4));
     x += Math.sin(ang) * len;
     y += Math.cos(ang) * len;
-    ang += 0.06;
+    ang += 0.034 + (i > 5 ? 0.02 : 0);
   }
   b.sphere(0.5, x, y, 0, 0x6a5a2a, 1, 0.8, 1);
   for (let i = 0; i < 13; i++) {
@@ -438,17 +438,39 @@ export function house(b: GeoBatch, wall = 0xf2ece0, roof = 0xc24a3a, seed = 0) {
 }
 
 export function windmillBase(b: GeoBatch) {
-  b.taper(2.6, 1.6, 9, 0, 0, 0, 0xf0e8d8, 10);
-  b.cone(2.2, 2.4, 0, 9, 0, 0x9a4a32, 12);
-  b.box(1, 1.8, 0.3, 0, 0.9, 2.5, 0x5a3a22);
+  const stone = 0x8c8478, plaster = 0xf3ece0, wood = 0x6a4428;
+  b.cyl(3.1, 0.9, 0, 0, 0, stone, 16);
+  for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; b.box(1.1, 0.45, 0.3, Math.cos(a) * 3.12, 0.3 + (i % 2) * 0.35, Math.sin(a) * 3.12, i % 2 ? 0x9a9286 : 0x7a736a, -a + Math.PI / 2); }
+  b.taper(2.7, 1.75, 8.4, 0, 0.8, 0, plaster, 16);
+  for (const y of [0.9, 4.8, 9.0]) b.taper(y < 2 ? 2.78 : y < 6 ? 2.32 : 1.8, y < 2 ? 2.72 : y < 6 ? 2.26 : 1.76, 0.3, 0, y, 0, wood, 16);
+  // Balcony ring with posts.
+  b.cyl(2.75, 0.18, 0, 5.2, 0, wood, 16);
+  for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; b.box(0.1, 0.9, 0.1, Math.cos(a) * 2.68, 5.75, Math.sin(a) * 2.68, wood); }
+  b.addGeo(UNIT.torus, wood, mat(0, 6.2, 0, Math.PI / 2, 0, 0, 2.68, 2.68, 0.5));
+  // Rounded wooden cap with a ridge and finial.
+  b.addGeo(UNIT.hemi, 0x9a4a32, mat(0, 9.2, 0, 0, 0, 0, 2.15, 1.9, 2.4));
+  b.box(0.3, 0.3, 4.6, 0, 10.9, 0, 0x6e321f);
+  b.sphere(0.25, 0, 11.2, 0, 0xd8b04a);
+  // Door and windows facing +z.
+  b.box(1.3, 2.1, 0.3, 0, 1.95, 2.55, wood);
+  b.box(1.0, 1.85, 0.25, 0, 1.85, 2.66, 0x8a5430);
+  b.box(1.5, 0.15, 0.6, 0, 3.05, 2.7, 0x9a4a32, 0, 0.3);
+  for (const [y, r] of [[3.9, 2.38], [7.2, 2.02]] as const) { b.box(0.8, 0.95, 0.2, 0, y, r, 0xeee2c8); b.box(0.6, 0.75, 0.2, 0, y, r + 0.05, 0x2c4a66); }
+  b.box(0.7, 0.8, 0.2, 2.1, 3.0, 0.7, 0x2c4a66, Math.PI / 2 - 0.3);
+  // Sacks by the door.
+  b.sphere(0.45, 1.6, 1.25, 2.6, 0xd8c8a0, 1, 0.8, 1); b.sphere(0.4, 2.2, 1.15, 2.3, 0xcbb890, 1, 0.75, 1);
 }
 export function windmillBlades(): THREE.BufferGeometry {
   const b = new GeoBatch();
-  b.cyl(0.35, 0.8, 0, 0, 0, 0x6a4a30, 8, Math.PI / 2);
+  b.cyl(0.38, 0.9, 0, 0, 0, 0x6a4a30, 8, Math.PI / 2);
+  b.sphere(0.32, 0, 0, 0.95, 0x5a3a22);
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2;
-    b.addGeo(UNIT.box, 0x7a5a38, mat(0, 0, 0.6, 0, 0, a).multiply(mat(0, 3.6, 0, 0, 0, 0, 0.18, 7.2, 0.12)));
-    b.addGeo(UNIT.box, 0xf6f0e2, mat(0, 0, 0.62, 0, 0, a).multiply(mat(0.6, 4.2, 0, 0, 0, 0, 1.1, 5.2, 0.04)));
+    const arm = (m: THREE.Matrix4) => mat(0, 0, 0.62, 0, 0, a).multiply(m);
+    b.addGeo(UNIT.box, 0x7a5a38, arm(mat(0, 3.6, 0, 0, 0, 0, 0.2, 7.2, 0.14)));
+    b.addGeo(UNIT.box, 0xf6f0e2, arm(mat(0.68, 4.3, 0.02, 0, 0, 0, 1.2, 5.4, 0.04)));
+    b.addGeo(UNIT.box, 0x7a5a38, arm(mat(1.28, 4.3, 0, 0, 0, 0, 0.08, 5.4, 0.08)));
+    for (let k = 0; k < 6; k++) b.addGeo(UNIT.box, 0x7a5a38, arm(mat(0.66, 1.75 + k * 1.02, 0.05, 0, 0, 0, 1.3, 0.07, 0.06)));
   }
   return b.merge();
 }
@@ -486,6 +508,99 @@ export function barrel(b: GeoBatch, x: number, y: number, z: number, s = 1) {
   b.cyl(0.5 * s, 1.3 * s, x, y, z, 0x8a5a32, 12);
   b.cyl(0.53 * s, 0.1 * s, x, y + 0.25 * s, z, 0x3a3a3a, 12);
   b.cyl(0.53 * s, 0.1 * s, x, y + 0.95 * s, z, 0x3a3a3a, 12);
+}
+
+/** Iron street lamp on a stone foot. */
+export function lampPost(b: GeoBatch) {
+  b.cyl(0.32, 0.4, 0, 0, 0, 0x8c8478, 8);
+  b.cyl(0.09, 3.4, 0, 0.4, 0, 0x2e2a28, 8);
+  b.box(0.9, 0.08, 0.08, 0.3, 3.6, 0, 0x2e2a28);
+  b.box(0.42, 0.55, 0.42, 0.62, 3.25, 0, 0x2e2a28);
+  b.box(0.32, 0.42, 0.32, 0.62, 3.25, 0, 0xffd98a);
+  b.cone(0.36, 0.3, 0.62, 3.52, 0, 0x2e2a28, 4, 0, Math.PI / 4);
+}
+
+/** Stone well with a little shingled roof, crank and bucket. */
+export function well(b: GeoBatch) {
+  b.cyl(1.3, 1.0, 0, 0, 0, 0x8c8478, 16);
+  b.cyl(1.38, 0.18, 0, 1.0, 0, 0x7a736a, 16);
+  b.cyl(1.0, 0.05, 0, 0.85, 0, 0x2a5a7a, 16);
+  for (const s of [-1, 1]) b.box(0.18, 2.2, 0.18, s * 1.1, 1.1, 0, 0x6a4428);
+  b.addGeo(UNIT.prism, 0xb8503a, mat(0, 3.1, 0, 0, 0, 0, 3.0, 0.9, 2.2));
+  b.cyl(0.08, 2.4, -1.2, 2.5, 0, 0x5a3a22, 8, 0, 0, Math.PI / 2);
+  b.cyl(0.25, 0.4, 0.2, 1.6, 0, 0x8a5a32, 8);
+}
+
+/** Market stall with a striped awning and produce crates. */
+export function marketStall(b: GeoBatch, stripe: number, seed: number) {
+  const wood = 0x7a5232;
+  b.box(3.2, 0.9, 1.4, 0, 0.45, 0, 0x9a6a3c);
+  b.box(3.3, 0.1, 1.5, 0, 0.92, 0, wood);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.12, 2.6, 0.12, sx * 1.55, 1.3, sz * 0.65, wood);
+  for (let i = 0; i < 6; i++) b.box(0.56, 0.08, 1.9, -1.4 + i * 0.56, 2.75, 0.2, i % 2 ? 0xf6f0e2 : stripe, 0, -0.25);
+  const goods = [0xff7a3d, 0xe8c63a, 0x7ac83a, 0xd8343a, 0x9a5ad8];
+  for (let i = 0; i < 4; i++) {
+    b.box(0.65, 0.25, 0.6, -1.1 + i * 0.73, 1.08, 0.1, 0xa8783e);
+    for (let k = 0; k < 4; k++) b.sphere(0.13, -1.25 + i * 0.73 + (k % 2) * 0.28, 1.3, (k < 2 ? -0.05 : 0.22), goods[(i + seed) % goods.length]);
+  }
+}
+
+/** Small wooden rowboat, bow toward +z. */
+export function rowboat(b: GeoBatch, paint: number) {
+  b.addGeo(UNIT.hemi, 0x7a5232, mat(0, 0.5, 0, Math.PI, 0, 0, 0.9, 0.55, 2.2));
+  b.addGeo(UNIT.torus, paint, mat(0, 0.5, 0, Math.PI / 2, 0, 0, 0.9, 2.2, 1.2));
+  for (const z of [-0.8, 0.5]) b.box(1.6, 0.08, 0.3, 0, 0.35, z, 0x9a6a3c);
+  b.box(0.08, 0.06, 2.6, 0.5, 0.55, 0.2, 0xb8945a, 0.3);
+}
+
+/** Cluster of black volcanic-glass spires with a faint violet sheen. */
+export function obsidian(): THREE.BufferGeometry {
+  const b = new GeoBatch();
+  b.jitter = 0.08;
+  const n = 4 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.6, r = i === 0 ? 0 : 0.5 + Math.random() * 0.5;
+    const h = (i === 0 ? 3.2 : 1.2 + Math.random() * 1.6);
+    const tilt = i === 0 ? 0 : 0.25 + Math.random() * 0.3;
+    b.addGeo(new THREE.ConeGeometry(0.42 * (h / 3) + 0.15, h, 5), i % 2 ? 0x2a2236 : 0x1a1620, mat(Math.cos(a) * r, h * 0.45, Math.sin(a) * r, Math.sin(a) * tilt, 0, -Math.cos(a) * tilt));
+  }
+  b.ico(0.7, 0, 0.2, 0, 0x231e24, 0, 1.4, 0.5, 1.2);
+  return b.merge();
+}
+
+/** Bubbling magma pool: bright core, cooling orange ring, black crust rim. */
+export function magmaPool(): THREE.BufferGeometry {
+  const seg = 18;
+  const pos: number[] = [], col: number[] = [];
+  const ringR = [0, 0.55, 0.85, 1.0, 1.25];
+  const ringC = [[1.6, 0.9, 0.3], [1.4, 0.55, 0.12], [1.0, 0.28, 0.05], [0.25, 0.08, 0.04], [0.09, 0.07, 0.07]];
+  const ringY = [0.05, 0.05, 0.06, 0.12, 0.2];
+  const wob = Array.from({ length: seg }, () => 0.85 + Math.random() * 0.3);
+  const P = (ri: number, si: number) => { const a = (si / seg) * Math.PI * 2, r = ringR[ri] * wob[si % seg]; return [Math.cos(a) * r, ringY[ri], Math.sin(a) * r]; };
+  for (let ri = 0; ri < ringR.length - 1; ri++) for (let si = 0; si < seg; si++) {
+    const a = P(ri, si), bq = P(ri, si + 1), c = P(ri + 1, si), d = P(ri + 1, si + 1);
+    const ca = ringC[ri], cb = ringC[ri + 1];
+    pos.push(...a, ...c, ...bq, ...bq, ...c, ...d);
+    col.push(...ca, ...cb, ...ca, ...ca, ...cb, ...cb);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  g.scale(1.6, 1, 1.6);
+  return g;
+}
+
+/** Scorched, wiry shrub for ash fields. */
+export function ashShrub(): THREE.BufferGeometry {
+  const b = new GeoBatch();
+  b.jitter = 0.1;
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    b.addGeo(new THREE.CylinderGeometry(0.015, 0.04, 0.9, 4), i % 3 ? 0x3a2e28 : 0x5a3a24, mat(Math.cos(a) * 0.15, 0.4, Math.sin(a) * 0.15, Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6));
+  }
+  b.ico(0.12, 0.2, 0.75, 0, 0xc8501e, 0);
+  return b.merge();
 }
 
 export function watchtower(b: GeoBatch, wood = 0x7a5a38) {

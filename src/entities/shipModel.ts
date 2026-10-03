@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import { toonGradient, outlineMat } from '../world/materials';
 import { GeoBatch, mat } from '../world/props';
 
+const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
+const UNIT_TORUS = new THREE.TorusGeometry(1, 0.18, 6, 16);
+
 export type ShipStyle = 'player' | 'pirate' | 'navy' | 'boss';
 
 export interface ShipDims { L: number; W: number; deckY: number; qd: number; fc: number }
@@ -18,6 +21,7 @@ export interface ShipParts {
   cannonPorts: { pos: THREE.Vector3; side: 1 | -1 }[];
   windows: THREE.MeshStandardMaterial;
   hullMat: THREE.Material;
+  trim: number;
 }
 
 export function halfWidth(d: ShipDims, z: number) {
@@ -29,6 +33,22 @@ export function halfWidth(d: ShipDims, z: number) {
   else if (u < 0.58) f = 1;
   else f = Math.pow(Math.cos(((u - 0.58) / 0.42) * Math.PI / 2), 0.75);
   return Math.max(0.05, (d.W / 2) * f);
+}
+
+function hullTop(d: ShipDims, u: number) {
+  const sheer = 0.5 * Math.pow(Math.abs(u - 0.45) * 2, 2) + (u > 0.82 ? (u - 0.82) * 4 : 0);
+  return d.deckY + 0.75 + sheer;
+}
+function hullKeel(u: number) {
+  return -1.9 * (u < 0.92 ? 1 : 1 - (u - 0.92) / 0.08 * 0.6);
+}
+/** Outer hull half-width at local z and height y (matches the lofted hull). */
+export function hullX(d: ShipDims, z: number, y: number) {
+  const u = Math.min(1, Math.max(0, (z + d.L / 2) / d.L));
+  const top = hullTop(d, u), keel = hullKeel(u);
+  const a = Math.pow(Math.min(1, Math.max(0, (y - keel) / (top - keel))), 1 / 0.75);
+  const bulge = Math.sin(a * Math.PI * 0.62) * 1.04;
+  return halfWidth(d, z) * Math.min(1, bulge + (a > 0.9 ? 0.02 : 0)) * (a < 0.08 ? a / 0.08 * 0.3 : 1);
 }
 
 /** Walkable deck height (local) at local z. */
@@ -119,16 +139,15 @@ export function buildShip(style: ShipStyle, d: ShipDims, look?: { hat: string; h
   const L = d.L, W = d.W, deckY = d.deckY;
 
   // ---- Hull (lofted).
-  const S = 28, K = 12;
+  const S = 36, K = 40;
   const pos: number[] = [], col: number[] = [], uv: number[] = [], idx: number[] = [];
-  const cPaint = new THREE.Color(paint), cWood = new THREE.Color(hullWood), cTrim = new THREE.Color(trim), cCopper = new THREE.Color(0x7a3a24);
+  const cPaint = new THREE.Color(paint), cWood = new THREE.Color(hullWood), cTrim = new THREE.Color(trim), cCopper = new THREE.Color(0x8a3626), cBoot = new THREE.Color(0xeee6d2);
   for (let s = 0; s <= S; s++) {
     const z = -L / 2 + (s / S) * L;
     const hw = halfWidth(d, z);
     const u = s / S;
-    const sheer = 0.5 * Math.pow(Math.abs(u - 0.45) * 2, 2) + (u > 0.82 ? (u - 0.82) * 4 : 0);
-    const top = deckY + 0.75 + sheer;
-    const keel = -1.9 * (u < 0.92 ? 1 : 1 - (u - 0.92) / 0.08 * 0.6);
+    const top = hullTop(d, u);
+    const keel = hullKeel(u);
     for (let k = 0; k <= K; k++) {
       // k=0 port gunwale → k=K/2 keel → k=K starboard gunwale
       const t = k / K;
@@ -140,9 +159,10 @@ export function buildShip(style: ShipStyle, d: ShipDims, look?: { hat: string; h
       pos.push(x, y, z);
       uv.push(z / 4, y / 1.2);
       let c: THREE.Color;
-      if (y < -0.1) c = cCopper;
-      else if (y > top - 0.35) c = cTrim;
-      else if (y > deckY - 0.6 && y < deckY + 0.1) c = cPaint;
+      if (y < -0.25) c = cCopper;
+      else if (y < 0.05) c = cBoot;
+      else if (y > top - 0.2) c = cTrim;
+      else if (y > deckY - 0.55 && y < deckY + 0.5) c = cPaint;
       else c = cWood;
       col.push(c.r, c.g, c.b);
     }
@@ -246,14 +266,26 @@ export function buildShip(style: ShipStyle, d: ShipDims, look?: { hat: string; h
   // Figurehead.
   const fhz = L / 2 + 0.2, fhy = deckY + 0.9;
   if (style === 'player') {
-    b.sphere(0.95, 0, fhy + 0.5, fhz, 0xf4d03a);
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      b.addGeo(new THREE.ConeGeometry(0.32, 0.9, 5), 0xe8902a, mat(Math.cos(a) * 0.95, fhy + 0.5 + Math.sin(a) * 0.95, fhz - 0.2, 0, 0, a - Math.PI / 2));
+    const cy = fhy + 0.75, cz2 = fhz + 0.35;
+    b.addGeo(new THREE.CylinderGeometry(0.35, 0.5, 1.2, 10), hullWood, mat(0, fhy + 0.1, fhz - 0.1, -0.5, 0, 0));
+    for (let ring = 0; ring < 2; ring++) {
+      const n = ring ? 16 : 14, rr = ring ? 1.12 : 0.92;
+      for (let i = 0; i < n; i++) {
+        const a = ((i + ring * 0.5) / n) * Math.PI * 2;
+        const petal = new THREE.ConeGeometry(0.3, 0.75, 6);
+        petal.scale(1, 1, 0.45);
+        b.addGeo(petal, ring ? 0xd8701e : 0xf0962a, mat(Math.cos(a) * rr, cy + Math.sin(a) * rr, cz2 - 0.25 - ring * 0.12, 0, 0, a - Math.PI / 2));
+      }
     }
-    b.sphere(0.13, 0.32, fhy + 0.75, fhz + 0.85, 0x1a1410);
-    b.sphere(0.13, -0.32, fhy + 0.75, fhz + 0.85, 0x1a1410);
-    b.box(0.5, 0.08, 0.1, 0, fhy + 0.25, fhz + 0.9, 0x6a2a1a);
+    b.sphere(0.9, 0, cy, cz2, 0xf6d13e, 1, 1, 0.72);
+    b.sphere(0.36, 0, cy - 0.18, cz2 + 0.55, 0xfbe07a, 1.2, 0.8, 0.7);
+    b.sphere(0.12, 0, cy - 0.05, cz2 + 0.8, 0x3a2410, 1.3, 0.9, 1);
+    for (const sx of [-1, 1]) {
+      b.sphere(0.16, sx * 0.33, cy + 0.26, cz2 + 0.6, 0xffffff, 1, 1.2, 0.6);
+      b.sphere(0.09, sx * 0.31, cy + 0.24, cz2 + 0.69, 0x1a1410);
+      b.box(0.3, 0.06, 0.08, sx * 0.34, cy + 0.5, cz2 + 0.6, 0x7a4a1a, 0, 0, sx * -0.25);
+    }
+    b.addGeo(new THREE.TorusGeometry(0.26, 0.05, 6, 12, Math.PI), 0x6a2a1a, mat(0, cy - 0.32, cz2 + 0.62, 0, 0, Math.PI));
   } else if (style === 'navy') {
     b.sphere(0.8, 0, fhy + 0.4, fhz, 0xf4f4f4, 1, 1, 1.3);
     b.addGeo(new THREE.ConeGeometry(0.25, 0.8, 6), 0xf4c040, mat(0, fhy + 0.4, fhz + 1.2, Math.PI / 2, 0, 0));
@@ -261,6 +293,52 @@ export function buildShip(style: ShipStyle, d: ShipDims, look?: { hat: string; h
     b.sphere(0.8, 0, fhy + 0.4, fhz, 0xeae4d4);
     b.sphere(0.2, 0.28, fhy + 0.5, fhz + 0.68, 0x111111);
     b.sphere(0.2, -0.28, fhy + 0.5, fhz + 0.68, 0x111111);
+  }
+  // Wales: raised rub strips following the sheer, port and starboard.
+  for (const wy of [deckY - 0.7, 0.9]) {
+    for (const side of [-1, 1]) {
+      for (let s = 0; s < 30; s++) {
+        const z0 = -L / 2 + 0.15 + (s / 30) * (L * 0.93), z1 = -L / 2 + 0.15 + ((s + 1) / 30) * (L * 0.93);
+        const u0 = (z0 + L / 2) / L, u1 = (z1 + L / 2) / L;
+        const y0 = wy + (hullTop(d, u0) - d.deckY - 0.75), y1 = wy + (hullTop(d, u1) - d.deckY - 0.75);
+        const x0 = hullX(d, z0, y0) + 0.05, x1 = hullX(d, z1, y1) + 0.05;
+        if (x0 < 0.4 || x1 < 0.4) continue;
+        const len = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+        const m = new THREE.Matrix4().lookAt(new THREE.Vector3(side * x0, y0, z0), new THREE.Vector3(side * x1, y1, z1), new THREE.Vector3(0, 1, 0));
+        m.setPosition((side * (x0 + x1)) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+        b.addGeo(UNIT_BOX, wy > 1.5 ? trim : darkWood, m.multiply(new THREE.Matrix4().makeScale(0.12, 0.14, len + 0.04)));
+      }
+    }
+  }
+  // Stern: gilded bands, carved name board and window frames.
+  const sw = halfWidth(d, -L / 2) * 2;
+  b.box(sw * 0.98, 0.14, 0.12, 0, deckY + 1.15, -L / 2 - 0.04, trim);
+  b.box(sw * 0.92, 0.12, 0.12, 0, deckY + 0.2, -L / 2 - 0.04, trim);
+  b.box(sw * 0.55, 0.34, 0.1, 0, deckY - 0.25, -L / 2 - 0.06, 0x3a2414);
+  b.box(sw * 0.5, 0.06, 0.12, 0, deckY - 0.1, -L / 2 - 0.07, trim);
+  b.box(sw * 0.5, 0.06, 0.12, 0, deckY - 0.4, -L / 2 - 0.07, trim);
+  for (let i = -1; i <= 1; i++) b.box(0.86, 0.66, 0.06, i * 1.2, deckY + 0.6, -L / 2 - 0.01, trim);
+  for (const sx of [-1, 1]) b.addGeo(UNIT_BOX, trim, mat(sx * (sw / 2 - 0.1), deckY + 0.6, -L / 2 + 0.05, 0, 0, 0, 0.16, 1.2, 0.16));
+  // Main hatch with grating.
+  const hz = (mainZ + foreZ) / 2;
+  b.box(2.2, 0.35, 1.8, 0, deckY + 0.17, hz, darkWood);
+  for (let i = 0; i < 6; i++) b.box(0.08, 0.06, 1.6, -0.9 + i * 0.36, deckY + 0.37, hz, 0x2a1a10);
+  for (let i = 0; i < 5; i++) b.box(2.0, 0.06, 0.08, 0, deckY + 0.38, hz - 0.7 + i * 0.35, 0x8a6038);
+  // Capstan behind the mainmast.
+  const cz = mainZ - 2.1;
+  b.taper(0.42, 0.32, 0.9, 0, deckY, cz, darkWood, 12);
+  b.cyl(0.5, 0.18, 0, deckY + 0.88, cz, wood, 12);
+  for (let i = 0; i < 4; i++) b.box(1.9, 0.07, 0.07, 0, deckY + 0.98, cz, 0xa07850, (i / 4) * Math.PI);
+  // Fife rails with belaying pins and coiled rope at the mast feet.
+  for (const [mz, r] of [[mainZ, 0.9], [foreZ, 0.75]] as const) {
+    for (const sx of [-1, 1]) {
+      b.box(0.1, 0.8, 0.1, sx * r, deckY + 0.4, mz + 0.55, wood);
+      b.box(0.1, 0.8, 0.1, sx * r, deckY + 0.4, mz - 0.55, wood);
+      b.box(0.12, 0.08, 1.3, sx * r, deckY + 0.8, mz, darkWood);
+      for (let k = 0; k < 4; k++) b.cyl(0.03, 0.3, sx * r, deckY + 0.72, mz - 0.45 + k * 0.3, 0xd8c8a0, 6);
+      b.addGeo(UNIT_TORUS, rope, mat(sx * (r + 0.55), deckY + 0.06, mz + 0.4, Math.PI / 2, 0, 0, 0.32, 0.32, 0.6));
+      b.addGeo(UNIT_TORUS, rope, mat(sx * (r + 0.55), deckY + 0.13, mz + 0.4, Math.PI / 2, 0, 0, 0.24, 0.24, 0.6));
+    }
   }
   // Wheel pedestal.
   b.box(0.3, 1.0, 0.3, 0, deckY + 1.3 + 0.5, -L / 2 + 2.2, darkWood);
@@ -312,6 +390,11 @@ export function buildShip(style: ShipStyle, d: ShipDims, look?: { hat: string; h
     g.strokeStyle = 'rgba(0,0,0,0.12)';
     g.lineWidth = 2;
     for (let i = 1; i < 6; i++) { g.beginPath(); g.moveTo(i * 256 / 6, 0); g.lineTo(i * 256 / 6, 256); g.stroke(); }
+    g.strokeStyle = 'rgba(70,50,30,0.35)'; g.lineWidth = 6; g.strokeRect(3, 3, 250, 250);
+    g.fillStyle = 'rgba(70,50,30,0.4)';
+    for (let i = 0; i < 12; i++) { g.beginPath(); g.arc(14 + i * 20.5, 30, 2.2, 0, 7); g.fill(); g.beginPath(); g.arc(14 + i * 20.5, 52, 2.2, 0, 7); g.fill(); }
+    const sh = g.createLinearGradient(0, 0, 0, 256); sh.addColorStop(0, 'rgba(0,0,0,0.08)'); sh.addColorStop(0.3, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,0.06)');
+    g.fillStyle = sh; g.fillRect(0, 0, 256, 256);
     if (style === 'navy') { g.fillStyle = '#2a4a8a'; g.fillRect(0, 100, 256, 56); }
   });
   const mainSailTex = canvasTex(256, 256, (g) => {
@@ -323,7 +406,8 @@ export function buildShip(style: ShipStyle, d: ShipDims, look?: { hat: string; h
       g.fillStyle = '#f4f6fa'; g.font = 'bold 44px serif'; g.textAlign = 'center'; g.fillText('MARINE', 128, 144);
     }
   });
-  const sailMat = (tex: THREE.Texture) => new THREE.MeshToonMaterial({ map: tex, gradientMap: toonGradient(), side: THREE.DoubleSide });
+  // Sailcloth is translucent: a little emissive keeps backlit sails reading as cloth instead of grey.
+  const sailMat = (tex: THREE.Texture) => new THREE.MeshToonMaterial({ map: tex, gradientMap: toonGradient(), side: THREE.DoubleSide, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.22 });
   const mkSail = (z: number, yTop: number, h: number, w: number, tex: THREE.Texture, mastIdx: number) => {
     const g = new THREE.PlaneGeometry(w, h, 8, 6);
     const m = new THREE.Mesh(g, sailMat(tex));
@@ -336,6 +420,47 @@ export function buildShip(style: ShipStyle, d: ShipDims, look?: { hat: string; h
   mkSail(mainZ, deckY + mainH * 0.48, mainH * 0.3, W * 1.05, sailTex, 0);
   mkSail(foreZ, deckY + foreH * 0.88, foreH * 0.34, W * 1.05, sailTex, 1);
   mkSail(foreZ, deckY + foreH * 0.48, foreH * 0.28, W * 0.9, sailTex, 1);
+
+  const triSail = (a: THREE.Vector3, bb: THREE.Vector3, c: THREE.Vector3, belly: number, tex: THREE.Texture) => {
+    const N = 8, P: number[] = [], U: number[] = [], I: number[] = [];
+    const n = new THREE.Vector3().subVectors(bb, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
+    for (let i = 0; i <= N; i++) for (let j = 0; j <= N - i; j++) {
+      const u = i / N, v = j / N, w = 1 - u - v;
+      const p = a.clone().multiplyScalar(w).addScaledVector(bb, u).addScaledVector(c, v);
+      p.addScaledVector(n, belly * 4 * u * v * w * 2.2);
+      P.push(p.x, p.y, p.z); U.push(u + v * 0.5, v);
+    }
+    const row = (i: number) => { let k = 0; for (let r = 0; r < i; r++) k += N - r + 1; return k; };
+    for (let i = 0; i < N; i++) for (let j = 0; j < N - i; j++) {
+      const k0 = row(i) + j, k1 = row(i + 1) + j;
+      I.push(k0, k1, k0 + 1);
+      if (j < N - i - 1) I.push(k0 + 1, k1, k1 + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+    g.setIndex(I);
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, sailMat(tex));
+    m.castShadow = true;
+    root.add(m);
+  };
+  triSail(new THREE.Vector3(0, deckY + foreH * 0.86, foreZ + 0.3), new THREE.Vector3(0, deckY + 1.7, L / 2 + L * 0.06), new THREE.Vector3(0, deckY + 1.4 + L * 0.055, L / 2 + L * 0.24), 0.5, sailTex);
+  if (L > 20) {
+    const mz = -L / 2 + d.qd * 0.45, mh = L * 0.42;
+    const gaffGeo = new THREE.CylinderGeometry(0.07, 0.07, 5.2, 6);
+    const spars = new THREE.MeshToonMaterial({ color: 0x8a5a34, gradientMap: toonGradient() });
+    const gaff = new THREE.Mesh(gaffGeo, spars);
+    gaff.position.set(0, deckY + 1.3 + mh * 0.9 - 0.6, mz - 2.3);
+    gaff.rotation.x = Math.PI / 2 - 0.25;
+    root.add(gaff);
+    const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 6, 6), spars);
+    boom.position.set(0, deckY + 2.9, mz - 2.6);
+    boom.rotation.x = Math.PI / 2;
+    root.add(boom);
+    triSail(new THREE.Vector3(0, deckY + 1.3 + mh * 0.9, mz - 0.2), new THREE.Vector3(0, deckY + 3.0, mz - 0.2), new THREE.Vector3(0, deckY + 3.0, mz - 5.4), 0.35, sailTex);
+    triSail(new THREE.Vector3(0, deckY + 1.3 + mh * 0.9, mz - 0.2), new THREE.Vector3(0, deckY + 3.0, mz - 5.4), new THREE.Vector3(0, deckY + 1.3 + mh * 0.9 - 1.25, mz - 4.8), 0.25, sailTex);
+  }
 
   // ---- Flag.
   const flagGeo = new THREE.PlaneGeometry(3.2, 2, 10, 6);
@@ -362,7 +487,7 @@ export function buildShip(style: ShipStyle, d: ShipDims, look?: { hat: string; h
 
   const cannonsGroup = new THREE.Group();
   root.add(cannonsGroup);
-  return { root, sails, flag, flagBase: (flagGeo.attributes.position.array as Float32Array).slice(), wheel, cannonsGroup, cannonPorts: [], windows, hullMat };
+  return { root, sails, flag, flagBase: (flagGeo.attributes.position.array as Float32Array).slice(), wheel, cannonsGroup, cannonPorts: [], windows, hullMat, trim };
 }
 
 const cannonGeo = (() => {
@@ -379,6 +504,8 @@ export function setCannons(parts: ShipParts, d: ShipDims, perSide: number) {
   parts.cannonPorts = [];
   const m = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient() });
   const span = d.L * 0.5;
+  const ports = new GeoBatch();
+  ports.jitter = 0;
   for (const side of [1, -1] as const) {
     for (let i = 0; i < perSide; i++) {
       const z = -span / 2 + 1 + (perSide === 1 ? span / 2 : (i / (perSide - 1)) * (span - 1.5)) + d.L * 0.05;
@@ -389,8 +516,12 @@ export function setCannons(parts: ShipParts, d: ShipDims, perSide: number) {
       c.castShadow = true;
       parts.cannonsGroup.add(c);
       parts.cannonPorts.push({ pos: new THREE.Vector3(side * (halfWidth(d, z) + 0.6), d.deckY + 0.6, z), side });
+      const px = side * (hullX(d, z, d.deckY + 0.4) + 0.02);
+      ports.box(0.08, 0.58, 0.8, px, d.deckY + 0.4, z, parts.trim);
+      ports.box(0.1, 0.44, 0.62, px + side * 0.02, d.deckY + 0.4, z, 0x140c08);
     }
   }
+  if (perSide > 0) parts.cannonsGroup.add(new THREE.Mesh(ports.merge(), m));
 }
 
 /** Animate sails (billow with sail level) and flag waving. */

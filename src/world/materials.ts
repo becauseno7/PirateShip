@@ -119,14 +119,17 @@ export const GLSL_NOISE = /* glsl */ `
  * Cel-shaded terrain: vertex colors from the island generator, broken up in the fragment shader
  * with world-space noise (sun-bleached patches, clover, dirt speckle) so the ground never reads flat.
  */
-export function terrainMaterial() {
+export function terrainMaterial(lava = 0) {
   const m = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: worldGradient() });
+  const uLava = { value: lava };
   m.onBeforeCompile = (sh) => {
+    sh.uniforms.uLava = uLava;
+    sh.uniforms.uTime = sharedUniforms.uTime;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\n' + GLSL_NOISE)
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform float uLava;\nuniform float uTime;\n' + GLSL_NOISE)
       .replace('#include <color_fragment>', `#include <color_fragment>
         {
           vec2 w = vWPos.xz;
@@ -140,12 +143,27 @@ export function terrainMaterial() {
           c = mix(c, c * vec3(1.14, 1.08, 0.62), grassy * smoothstep(0.52, 0.78, big) * 0.55);
           c = mix(c, c * vec3(0.72, 0.9, 0.95), grassy * smoothstep(0.42, 0.18, mid) * 0.45);
           c *= 1.0 + (fine - 0.5) * (0.1 * grassy + 0.16 * sandy + 0.08);
+          // Painted grass strokes: stretched noise reads as a far-off lawn and blends with the blades.
+          float strokes = wNoise(vec2(w.x * 2.6 + w.y * 0.9, w.y * 0.7 - w.x * 0.3) * 1.4);
+          c *= mix(1.0, 0.8 + 0.2 * strokes, grassy);
+          c = mix(c, c * vec3(0.93, 1.02, 0.86), grassy * 0.5);
           float lum = dot(c, vec3(0.299, 0.587, 0.114));
-          c = mix(vec3(lum), c, 0.85 - 0.1 * grassy);
+          c = mix(vec3(lum), c, 0.85 + 0.1 * grassy);
           diffuseColor.rgb = c;
+        }`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        if (uLava > 0.0) {
+          // Glowing magma veins in dark rock, pulsing slowly.
+          vec2 w = vWPos.xz;
+          float v1 = abs(wNoise(w * 0.045) - 0.5), v2 = abs(wNoise(w * 0.11 + 7.0) - 0.5);
+          float vein = (1.0 - smoothstep(0.0, 0.012, v1)) + 0.5 * (1.0 - smoothstep(0.0, 0.008, v2));
+          float lum0 = dot(vColor.rgb, vec3(0.3, 0.59, 0.11));
+          float mask = smoothstep(0.6, 0.72, wFbm(w * 0.012 + 3.0)) * (1.0 - smoothstep(0.05, 0.09, lum0));
+          float pulse = 0.75 + 0.25 * sin(uTime * 1.3 + wNoise(w * 0.02) * 6.28);
+          totalEmissiveRadiance += vec3(1.0, 0.32, 0.05) * vein * mask * pulse * uLava * 1.3;
         }`);
   };
-  m.customProgramCacheKey = () => 'terrain-v1';
+  m.customProgramCacheKey = () => 'terrain-v3';
   return m;
 }
 

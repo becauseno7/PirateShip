@@ -79,6 +79,38 @@ function capsule(r: number, len: number) {
   return g;
 }
 
+/** Soft anime rim light: brightens silhouette edges so characters pop off the background. */
+function rimLight(m: THREE.MeshToonMaterial) {
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+      float rimK = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 2.6);
+      outgoingLight += (diffuseColor.rgb * 0.5 + vec3(0.07, 0.065, 0.06)) * smoothstep(0.25, 0.7, rimK);
+      #include <opaque_fragment>`);
+  };
+  m.customProgramCacheKey = () => 'char-rim';
+}
+
+const limbCache = new Map<string, THREE.BufferGeometry>();
+/** Tapered limb with a soft muscle bulge; same footprint as capsule(r0, len). */
+function limb(r0: number, r1: number, len: number, bulgeAt = 0.3, bulge = 0.008) {
+  const k = [r0, r1, len, bulgeAt, bulge].map((v) => v.toFixed(3)).join(':');
+  let g = limbCache.get(k);
+  if (!g) {
+    const pts: THREE.Vector2[] = [];
+    for (let i = 0; i <= 4; i++) { const a = (i / 4) * Math.PI / 2; pts.push(new THREE.Vector2(Math.max(1e-4, r0 * Math.sin(a)), len / 2 + r0 * Math.cos(a))); }
+    for (let i = 1; i < 10; i++) {
+      const t = i / 10;
+      const r = r0 + (r1 - r0) * t + bulge * Math.exp(-Math.pow((t - bulgeAt) / 0.22, 2));
+      pts.push(new THREE.Vector2(r, len / 2 - t * len));
+    }
+    for (let i = 0; i <= 4; i++) { const a = Math.PI / 2 + (i / 4) * Math.PI / 2; pts.push(new THREE.Vector2(Math.max(1e-4, r1 * Math.sin(a)), -len / 2 + r1 * Math.cos(a))); }
+    g = new THREE.LatheGeometry(pts.reverse(), 12);
+    g.computeVertexNormals();
+    limbCache.set(k, g);
+  }
+  return g;
+}
+
 /** Action pose generators: given t in [0,1], return pose targets + weight. */
 const ACTIONS: Record<string, (t: number) => { pose: Pose; w: number; bodyY?: number; spin?: number; lean?: number }> = {
   punchR: (t) => {
@@ -277,6 +309,8 @@ export class Humanoid {
   weaponR: THREE.Object3D | null = null;
   weaponL: THREE.Object3D | null = null;
   deadT = 0;
+  private relax = 0;
+  private sinceAction = 0;
   scale: number;
   private aura: THREE.Mesh | null = null;
   private faceOpts!: FaceOpts;
@@ -295,6 +329,7 @@ export class Humanoid {
 
   private mat(color: string | number) {
     const m = new THREE.MeshToonMaterial({ color: new THREE.Color(color as any), gradientMap: toonGradient() });
+    rimLight(m);
     this.mats.push(m);
     return m;
   }
@@ -420,6 +455,7 @@ export class Humanoid {
       skin: '#' + new THREE.Color(L.skin as any).getHexString(), scar: !!L.scar, glow: L.eyeGlow ? '#' + new THREE.Color(L.eyeGlow).getHexString() : null,
     };
     this.faceMat = new THREE.MeshToonMaterial({ gradientMap: toonGradient(), transparent: true, alphaTest: 0.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    rimLight(this.faceMat);
     this.paintFace();
     const face = new THREE.Mesh(faceGeometry(R, jaw), this.faceMat);
     face.renderOrder = 1;
@@ -440,10 +476,10 @@ export class Humanoid {
     const arm = (side: 1 | -1) => {
       const sh = g(side === 1 ? 'shL' : 'shR', chest, side * 0.25 * b, 0.07, 0);
       // The upper arm's rounded top doubles as the deltoid, tucked into the torso.
-      this.mesh(capsule(0.067 * sb, 0.2), torsoMat, sh, -side * 0.006, -0.125, 0);
+      this.mesh(limb(0.067 * sb, 0.058 * sb, 0.2, 0.4, 0.008 * sb), torsoMat, sh, -side * 0.006, -0.125, 0);
       if (!bare && !L.armor) this.mesh(new THREE.CylinderGeometry(0.074 * sb, 0.078 * sb, 0.05, 12), shirt, sh, 0, -0.2, 0, false);
       const el = g(side === 1 ? 'elL' : 'elR', sh, 0, -0.29, 0);
-      this.mesh(capsule(0.057 * sb, 0.19), skin, el, 0, -0.13, 0);
+      this.mesh(limb(0.06 * sb, 0.045 * sb, 0.19, 0.22, 0.008 * sb), skin, el, 0, -0.13, 0);
       const ha = g(side === 1 ? 'haL' : 'haR', el, 0, -0.28, 0);
       this.mesh(fistGeometry(1.05 * sb, side), skin, ha, 0, 0, 0);
       return sh;
@@ -453,21 +489,28 @@ export class Humanoid {
     // Legs.
     const leg = (side: 1 | -1) => {
       const hi = g(side === 1 ? 'hiL' : 'hiR', hips, side * 0.1 * b, -0.02, 0);
-      this.mesh(capsule(0.09 * sb, 0.27), pants, hi, 0, -0.21, 0);
+      this.mesh(limb(0.096 * sb, 0.076 * sb, 0.27, 0.3, 0.006 * sb), pants, hi, 0, -0.21, 0);
       const kn = g(side === 1 ? 'knL' : 'knR', hi, 0, -0.44, 0);
       if (shorts) {
         this.mesh(new THREE.CylinderGeometry(0.1 * sb, 0.106 * sb, 0.08, 12), pants, kn, 0, 0.01, 0);
-        this.mesh(capsule(0.066 * sb, 0.27), skin, kn, 0, -0.2, 0);
+        this.mesh(limb(0.064 * sb, 0.046 * sb, 0.27, 0.3, 0.014 * sb), skin, kn, 0, -0.2, 0);
       } else {
-        this.mesh(capsule(0.075 * sb, 0.27), pants, kn, 0, -0.2, 0);
+        this.mesh(limb(0.078 * sb, 0.07 * sb, 0.27, 0.3, 0.005 * sb), pants, kn, 0, -0.2, 0);
         this.mesh(new THREE.CylinderGeometry(0.08 * sb, 0.072 * sb, 0.2, 12), shoes, kn, 0, -0.33, 0);
       }
       const ft = g(side === 1 ? 'ftL' : 'ftR', kn, 0, -0.43, 0);
       if (sandals) {
-        const foot = this.mesh(capsule(0.042, 0.12), skin, ft, 0, -0.03, 0.05, false);
-        foot.rotation.x = Math.PI / 2;
-        this.mesh(new THREE.BoxGeometry(0.105, 0.024, 0.25), shoes, ft, 0, -0.068, 0.05);
-        this.mesh(new THREE.BoxGeometry(0.1, 0.02, 0.03), shoes, ft, 0, -0.02, 0.08, false);
+        const foot = this.mesh(new THREE.SphereGeometry(1, 14, 10), skin, ft, 0, -0.035, 0.055);
+        foot.scale.set(0.048, 0.034, 0.12);
+        for (let i = 0; i < 4; i++) {
+          const toe = this.mesh(new THREE.SphereGeometry(1, 8, 6), skin, ft, side * (0.026 - i * 0.017), -0.045, 0.16 - i * 0.008, false);
+          toe.scale.setScalar(i === 0 ? 0.019 : 0.014);
+        }
+        this.mesh(new THREE.BoxGeometry(0.108, 0.022, 0.25), shoes, ft, 0, -0.068, 0.055);
+        for (const sx of [-1, 1]) {
+          const strap = this.mesh(new THREE.BoxGeometry(0.012, 0.012, 0.09), this.mat(0x7a4a24), ft, sx * 0.022, -0.02, 0.1, false);
+          strap.rotation.y = sx * 0.55;
+        }
       } else {
         const boot = this.mesh(capsule(0.058 * sb, 0.12), shoes, ft, 0, -0.025, 0.055);
         boot.rotation.x = Math.PI / 2;
@@ -584,68 +627,142 @@ export class Humanoid {
   private weapon(kind: Weapon, color: number): THREE.Object3D {
     const g = new THREE.Group();
     const steel = this.mat(color);
+    const edge = this.mat(new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.55).getHex());
     const dark = this.mat(0x2a1a12);
-    const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, rx = 0) => {
-      const me = new THREE.Mesh(geo, m);
-      me.position.set(x, y, z);
-      me.rotation.x = rx;
-      me.castShadow = true;
-      g.add(me);
+    const wrap = this.mat(0x3a2418);
+    const gold = this.mat(0xd8b04a);
+    const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
+      const me = this.mesh(geo, m, g, x, y, z, false);
+      me.rotation.set(rx, ry, rz);
       return me;
     };
+    // Blade from a 2D outline in the y/z plane (spine along -y, edge toward +z), thin in x.
+    const blade = (pts: [number, number][], thick: number) => {
+      const sh = new THREE.Shape();
+      sh.moveTo(pts[0][1], pts[0][0]);
+      for (const [y, z] of pts.slice(1)) sh.lineTo(z, y);
+      const geo = new THREE.ExtrudeGeometry(sh, { depth: thick, bevelEnabled: true, bevelThickness: thick * 0.4, bevelSize: thick * 0.35, bevelSegments: 1, steps: 1 });
+      geo.translate(0, 0, -thick / 2);
+      geo.rotateY(-Math.PI / 2); // shape x -> world z, extrude -> world x
+      return geo;
+    };
+    const curve = (len: number, w0: number, w1: number, bend: number, n = 10, tipBack = 0.12) => {
+      const top: [number, number][] = [], bot: [number, number][] = [];
+      for (let i = 0; i <= n; i++) {
+        const t = i / n, y = -t * len, c = bend * t * t;
+        const w = w0 + (w1 - w0) * t;
+        top.push([y, c - w * 0.15]);
+        bot.push([y, c + w * (i === n ? 0 : 1)]);
+      }
+      top[n] = [-len - tipBack * w1, bend + w1 * 0.4];
+      return [...top, ...bot.reverse()] as [number, number][];
+    };
+    const grip = (len: number, r: number, y0: number) => {
+      add(new THREE.CylinderGeometry(r, r * 1.05, len, 8), wrap, 0, y0, 0);
+      for (let i = 0; i < 4; i++) add(new THREE.TorusGeometry(r * 1.02, r * 0.28, 4, 8), dark, 0, y0 - len / 2 + (i + 0.5) * (len / 4), 0, Math.PI / 2);
+    };
     switch (kind) {
-      case 'cutlass':
-        add(new THREE.BoxGeometry(0.03, 0.12, 0.03), dark, 0, 0, 0);
-        add(new THREE.BoxGeometry(0.1, 0.02, 0.06), this.mat(0xd8b04a), 0, -0.07, 0);
-        add(new THREE.BoxGeometry(0.02, 0.7, 0.08), steel, 0, -0.42, 0.02, 0.08);
-        break;
-      case 'katana':
-      case 'katana3':
-        add(new THREE.CylinderGeometry(0.02, 0.02, 0.24, 6), dark, 0, 0.02, 0);
-        add(new THREE.CylinderGeometry(0.05, 0.05, 0.015, 10), this.mat(0xd8b04a), 0, -0.1, 0);
-        add(new THREE.BoxGeometry(0.015, 0.95, 0.045), steel, 0, -0.58, 0.01);
-        break;
-      case 'musket':
-        add(new THREE.CylinderGeometry(0.025, 0.025, 1.1, 8), this.mat(0x333333), 0, 0, 0.45, Math.PI / 2);
-        add(new THREE.BoxGeometry(0.06, 0.12, 0.45), this.mat(0x6a4a2a), 0, -0.04, -0.12);
-        break;
-      case 'anchor': {
-        add(new THREE.CylinderGeometry(0.06, 0.06, 1.6, 8), steel, 0, -0.7, 0);
-        add(new THREE.BoxGeometry(0.7, 0.08, 0.08), steel, 0, -0.1, 0);
-        const t = add(new THREE.TorusGeometry(0.42, 0.07, 6, 16, Math.PI), steel, 0, -1.4, 0);
-        t.rotation.z = Math.PI;
-        add(new THREE.TorusGeometry(0.1, 0.03, 6, 12), steel, 0, 0.12, 0);
+      case 'cutlass': {
+        grip(0.13, 0.02, 0.02);
+        add(new THREE.SphereGeometry(0.03, 8, 6), gold, 0, 0.1, 0);
+        const guard = add(new THREE.TorusGeometry(0.075, 0.012, 5, 12, Math.PI * 1.2), gold, 0, 0.0, 0.03, 0, Math.PI / 2, -0.4);
+        guard.scale.set(1, 1.2, 1);
+        add(new THREE.BoxGeometry(0.03, 0.025, 0.13), gold, 0, -0.06, 0.03);
+        add(blade(curve(0.66, 0.05, 0.075, 0.07), 0.012), steel, 0, -0.07, 0.0);
         break;
       }
-      case 'kanabo': {
-        add(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 8), dark, 0, 0, 0);
-        add(new THREE.CylinderGeometry(0.2, 0.1, 1.5, 10), steel, 0, -0.95, 0);
-        for (let i = 0; i < 18; i++) {
-          const a = (i / 6) * Math.PI * 2, y = -0.5 - Math.floor(i / 6) * 0.4;
-          const s = add(new THREE.ConeGeometry(0.04, 0.12, 5), this.mat(0xc8c8c8), Math.cos(a) * 0.17, y, Math.sin(a) * 0.17);
-          s.rotation.z = -Math.atan2(Math.cos(a), 0.0001) * 0.0 + (Math.cos(a) > 0 ? -Math.PI / 2 : Math.PI / 2);
+      case 'katana':
+      case 'katana3': {
+        grip(0.24, 0.018, 0.04);
+        add(new THREE.CylinderGeometry(0.02, 0.02, 0.02, 8), gold, 0, 0.17, 0);
+        add(new THREE.CylinderGeometry(0.048, 0.048, 0.012, 12), gold, 0, -0.09, 0.01);
+        add(new THREE.BoxGeometry(0.024, 0.04, 0.032), gold, 0, -0.115, 0.012);
+        add(blade(curve(0.9, 0.032, 0.03, 0.05, 12, 0.6), 0.009), steel, 0, -0.12, 0);
+        add(new THREE.BoxGeometry(0.004, 0.8, 0.008), edge, 0.0, -0.53, 0.028);
+        break;
+      }
+      case 'musket': {
+        add(new THREE.CylinderGeometry(0.022, 0.026, 1.0, 8), this.mat(0x3a3a40), 0, 0.02, 0.5, Math.PI / 2);
+        for (const z of [0.25, 0.55, 0.85]) add(new THREE.TorusGeometry(0.03, 0.008, 4, 10), gold, 0, 0.02, z);
+        const stock = new THREE.Shape();
+        stock.moveTo(-0.32, 0.02); stock.lineTo(0.6, 0.02); stock.lineTo(0.6, -0.03); stock.lineTo(0.0, -0.04); stock.lineTo(-0.2, -0.13); stock.lineTo(-0.42, -0.16); stock.lineTo(-0.44, 0.0); stock.lineTo(-0.32, 0.02);
+        const sg = new THREE.ExtrudeGeometry(stock, { depth: 0.05, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.01, bevelSegments: 1 });
+        sg.translate(0, 0, -0.025); sg.rotateY(-Math.PI / 2);
+        add(sg, this.mat(0x6a4a2a), 0, 0, 0);
+        add(new THREE.BoxGeometry(0.02, 0.05, 0.06), this.mat(0x3a3a40), 0, 0.05, -0.02);
+        break;
+      }
+      case 'anchor': {
+        add(new THREE.CylinderGeometry(0.055, 0.065, 1.55, 10), steel, 0, -0.72, 0);
+        add(new THREE.TorusGeometry(0.11, 0.03, 6, 14), steel, 0, 0.14, 0);
+        const stockBar = add(new THREE.CylinderGeometry(0.045, 0.045, 0.8, 8), dark, 0, -0.08, 0, Math.PI / 2, 0, 0);
+        for (const sx of [-1, 1]) add(new THREE.SphereGeometry(0.06, 8, 6), dark, 0, -0.08, sx * 0.41);
+        stockBar.castShadow = true;
+        // Crown: arms curve up to broad flukes.
+        const arm = add(new THREE.TorusGeometry(0.48, 0.06, 8, 20, Math.PI), steel, 0, -1.08, 0, 0, 0, Math.PI);
+        arm.scale.set(1, 0.8, 1);
+        add(new THREE.SphereGeometry(0.1, 10, 8), steel, 0, -1.47, 0);
+        for (const sx of [-1, 1]) {
+          const fl = add(new THREE.ConeGeometry(0.16, 0.36, 4), steel, sx * 0.5, -1.0, 0, 0, Math.PI / 4, -sx * 0.35);
+          fl.scale.set(1, 1, 0.35);
         }
         break;
       }
-      case 'axe':
-        add(new THREE.CylinderGeometry(0.04, 0.04, 1.3, 8), dark, 0, -0.5, 0);
-        add(new THREE.BoxGeometry(0.05, 0.4, 0.45), steel, 0, -1.0, 0.18);
+      case 'kanabo': {
+        grip(0.42, 0.045, 0.02);
+        add(new THREE.CylinderGeometry(0.2, 0.1, 1.45, 10), steel, 0, -0.93, 0);
+        add(new THREE.CylinderGeometry(0.205, 0.205, 0.05, 10), dark, 0, -1.66, 0);
+        for (let r = 0; r < 4; r++) for (let i = 0; i < 7; i++) {
+          const a = (i / 7) * Math.PI * 2 + r * 0.45, y = -0.55 - r * 0.32;
+          const rad = 0.12 + (0.08 * (-y - 0.2)) / 1.45;
+          const spike = add(new THREE.ConeGeometry(0.035, 0.11, 5), edge, Math.cos(a) * rad, y, Math.sin(a) * rad);
+          spike.lookAt(Math.cos(a) * 2, y, Math.sin(a) * 2);
+          spike.rotateX(Math.PI / 2);
+        }
         break;
-      case 'scimitar2':
-        add(new THREE.BoxGeometry(0.03, 0.12, 0.03), dark, 0, 0, 0);
-        add(new THREE.BoxGeometry(0.02, 0.6, 0.1), steel, 0, -0.38, 0.05, 0.25);
+      }
+      case 'axe': {
+        grip(0.5, 0.035, -0.2);
+        add(new THREE.CylinderGeometry(0.035, 0.04, 0.85, 8), dark, 0, -0.8, 0);
+        const head: [number, number][] = [[-0.85, 0.02], [-0.8, 0.12], [-0.7, 0.28], [-0.82, 0.4], [-1.02, 0.44], [-1.22, 0.4], [-1.32, 0.28], [-1.22, 0.12], [-1.17, 0.02]];
+        add(blade(head, 0.04), steel, 0, 0, 0);
+        add(new THREE.BoxGeometry(0.06, 0.34, 0.1), dark, 0, -1.02, 0);
+        add(new THREE.ConeGeometry(0.05, 0.18, 4), steel, 0, -1.02, -0.13, -Math.PI / 2);
         break;
-      case 'spear':
-        add(new THREE.CylinderGeometry(0.03, 0.03, 2.4, 8), this.mat(0xd8b04a), 0, -0.2, 0);
-        add(new THREE.ConeGeometry(0.08, 0.4, 6), steel, 0, -1.6, 0, Math.PI);
-        add(new THREE.ConeGeometry(0.08, 0.3, 6), steel, 0, 1.1, 0);
+      }
+      case 'scimitar2': {
+        grip(0.12, 0.02, 0.02);
+        add(new THREE.SphereGeometry(0.028, 8, 6), gold, 0, 0.09, 0);
+        add(new THREE.BoxGeometry(0.03, 0.025, 0.16), gold, 0, -0.05, 0.02);
+        add(blade(curve(0.58, 0.045, 0.11, 0.16), 0.012), steel, 0, -0.06, 0);
         break;
-      case 'staff':
-        add(new THREE.CylinderGeometry(0.03, 0.03, 1.8, 8), dark, 0, -0.3, 0);
-        add(new THREE.SphereGeometry(0.12, 12, 10), new THREE.MeshBasicMaterial({ color }), 0, 0.65, 0);
+      }
+      case 'spear': {
+        add(new THREE.CylinderGeometry(0.028, 0.028, 2.4, 8), this.mat(0x8a5a32), 0, -0.2, 0);
+        add(blade([[-1.38, 0], [-1.48, 0.06], [-1.85, 0], [-1.48, -0.06]], 0.02), steel, 0, 0, 0);
+        add(new THREE.CylinderGeometry(0.04, 0.035, 0.08, 8), gold, 0, -1.38, 0);
+        for (let i = 0; i < 5; i++) add(new THREE.ConeGeometry(0.02, 0.18, 4), this.mat(0xc8282b), Math.cos(i) * 0.03, -1.27, Math.sin(i) * 0.03, Math.PI);
+        add(new THREE.ConeGeometry(0.04, 0.12, 6), gold, 0, 1.04, 0);
         break;
+      }
+      case 'staff': {
+        add(new THREE.CylinderGeometry(0.028, 0.034, 1.8, 8), dark, 0, -0.3, 0);
+        for (const y of [0.45, -0.95]) add(new THREE.TorusGeometry(0.036, 0.01, 4, 10), gold, 0, y, 0, Math.PI / 2);
+        add(new THREE.TorusGeometry(0.15, 0.015, 6, 16), gold, 0, 0.66, 0);
+        add(new THREE.SphereGeometry(0.11, 14, 10), new THREE.MeshBasicMaterial({ color, toneMapped: false }), 0, 0.66, 0);
+        break;
+      }
     }
     return g;
+  }
+
+  /** Big weapons rest on the shoulder; spears and staffs stand upright; blades hang low. */
+  private carry(): 'blade' | 'heavy' | 'pole' | 'gun' | 'none' {
+    const w = this.look.weapon ?? 'none';
+    if (w === 'anchor' || w === 'kanabo' || w === 'axe') return 'heavy';
+    if (w === 'spear' || w === 'staff') return 'pole';
+    if (w === 'musket') return 'gun';
+    return w === 'none' ? 'none' : 'blade';
   }
 
   private attachWeapons() {
@@ -669,6 +786,19 @@ export class Humanoid {
       sheath.position.set(0.22, 0, -0.06);
       sheath.rotation.set(0.5, 0, 0.3);
       this.j.hips.add(sheath);
+    }
+  }
+
+  /** Blend each held weapon between its fighting grip and its relaxed carry. */
+  private poseWeapons(k: number) {
+    const c = this.carry();
+    const fight = c === 'gun' ? 0 : -Math.PI / 2 + 0.1;
+    const rest = c === 'blade' ? -0.95 : c === 'heavy' ? 0.55 : c === 'pole' ? Math.PI : c === 'gun' ? 0.7 : fight;
+    for (const [wpn, side] of [[this.weaponR, 1], [this.weaponL, -1]] as const) {
+      if (!wpn) continue;
+      wpn.rotation.x = lerp(fight, rest, k);
+      wpn.rotation.z = (c === 'blade' ? 0.22 : c === 'heavy' ? -0.55 : 0) * k * side;
+      wpn.position.y = -0.04 + (c === 'pole' ? -0.55 : 0) * k;
     }
   }
 
@@ -751,11 +881,18 @@ export class Humanoid {
       target.head = [0, 0, 0];
       bodyY = Math.abs(Math.sin(ph)) * 0.07 * A - 0.02 * A;
       if (spd < 0.2) {
-        target.shL = [0.05, 0, 0.12 + Math.sin(t * 2.1) * 0.02];
-        target.shR = [0.05, 0, -0.12 - Math.sin(t * 2.1) * 0.02];
-        target.elL = [-0.2, 0, 0]; target.elR = [-0.2, 0, 0];
-        target.neck = [Math.sin(t * 0.7) * 0.04, Math.sin(t * 0.4) * 0.15, 0];
-        bodyY = Math.sin(t * 2.1) * 0.008;
+        // Relaxed stance: weight on one leg, soft elbows, slow breathing and a wandering gaze.
+        const sway = Math.sin(t * 0.55);
+        target.hips = [0, 0.04 * sway, 0.035 + 0.015 * sway];
+        target.hiL = [-0.05, 0, 0.06]; target.knL = [0.16, 0, 0];
+        target.hiR = [0.03, 0, -0.03]; target.knR = [0.04, 0, 0];
+        target.spine = [0.02, 0, -0.03];
+        target.chest = [Math.sin(t * 2.1) * 0.03, -0.04 * sway, 0];
+        target.shL = [0.08, 0, 0.16 + Math.sin(t * 2.1) * 0.02];
+        target.shR = [0.08, 0, -0.16 - Math.sin(t * 2.1) * 0.02];
+        target.elL = [-0.32, 0, 0]; target.elR = [-0.32, 0, 0];
+        target.neck = [Math.sin(t * 0.7) * 0.04, Math.sin(t * 0.4) * 0.18, 0];
+        bodyY = Math.sin(t * 2.1) * 0.008 - 0.01;
       }
     } else {
       const up = s.vy > 0 ? 1 : 0;
@@ -776,6 +913,20 @@ export class Humanoid {
       target.neck = [0.3, Math.sin(t * 6) * 0.4, 0];
       target.shL = [0.2, 0, 0.3]; target.shR = [0.2, 0, -0.3];
     }
+
+    // Relaxed weapon carry between fights.
+    this.sinceAction = s.action ? 0 : this.sinceAction + dt;
+    this.relax = s.action || s.steer != null ? Math.max(0, this.relax - dt * 8) : this.sinceAction > 1.2 ? Math.min(1, this.relax + dt * 2.5) : this.relax;
+    const carry = this.carry();
+    if (this.relax > 0 && s.grounded && carry !== 'none') {
+      const k = this.relax;
+      const blendArm = (j: J, p: [number, number, number]) => { const tg = target[j]; tg[0] = lerp(tg[0], p[0], k); tg[1] = lerp(tg[1], p[1], k); tg[2] = lerp(tg[2], p[2], k); };
+      if (carry === 'heavy') { blendArm('shR', [-0.12, 0, -0.5]); blendArm('elR', [-2.3, 0, 0]); blendArm('haR', [0.25, 0, 0]); blendArm('neck', [0.02, -0.15, 0]); }
+      else if (carry === 'pole') { blendArm('shR', [-0.12, 0, -0.18]); blendArm('elR', [-1.1, 0, 0]); }
+      else if (carry === 'gun') { blendArm('shR', [-0.2, 0, -0.1]); blendArm('elR', [-1.0, 0, 0]); blendArm('shL', [-0.5, 0, 0.3]); blendArm('elL', [-1.2, 0, 0]); }
+      else { const sw = Math.sin(this.phase) * 0.1 * Math.min(1, spd / 4); blendArm('shR', [0.12 - sw, 0, -0.22]); blendArm('elR', [-0.45, 0, 0]); if (this.weaponL) { blendArm('shL', [0.12 + sw, 0, 0.22]); blendArm('elL', [-0.45, 0, 0]); } }
+    }
+    this.poseWeapons(this.relax);
 
     // Action overlay.
     let sharp = 16;

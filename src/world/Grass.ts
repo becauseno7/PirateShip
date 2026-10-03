@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { GLSL_NOISE, sharedUniforms, worldGradient } from './materials';
 import type { Island } from './Island';
 
-const TILE = 64;
+const TILE = 76;
 
 export class Grass {
   mesh: THREE.Mesh;
@@ -24,7 +24,7 @@ export class Grass {
   };
   private max: number;
 
-  constructor(scene: THREE.Scene, max = 70000) {
+  constructor(scene: THREE.Scene, max = 90000) {
     this.max = max;
     // One blade: a tapered 3-segment strip, base at y=0, tip at y=1, shaded dark at the root.
     const segs = 3, w = 0.085;
@@ -73,7 +73,7 @@ export class Grass {
           vec2 tuv = ((world - uIslMin) / uCell + 0.5) / uRes;
           vec4 hm = texture2D(uHeight, tuv);
           float inside = step(0.0, tuv.x) * step(tuv.x, 1.0) * step(0.0, tuv.y) * step(tuv.y, 1.0);
-          float fade = 1.0 - smoothstep(0.6, 1.0, length(rel) / (uSize * 0.5));
+          float fade = 1.0 - smoothstep(0.3, 1.0, length(rel) / (uSize * 0.5));
           float clump = wNoise(world * 0.35);
           float hgt = uBladeH * (0.45 + aOff.z * 0.55 + clump * 0.6) * fade * smoothstep(0.45, 0.8, hm.g) * inside;
           float ang = aOff.z * 43.98;

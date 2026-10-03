@@ -16,6 +16,8 @@ interface Zone { x: number; z: number; r: number; blend: number; h: number }
 interface Seg { ax: number; az: number; bx: number; bz: number }
 
 const terrainMat = terrainMaterial();
+const lavaTerrainMat = terrainMaterial(1);
+const magmaMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
 const staticMat = propMaterial(0);
 const swayMat = propMaterial(0.11);
 const grassMat = propMaterial(0.9);
@@ -23,6 +25,20 @@ const glowMat = new THREE.MeshStandardMaterial({ vertexColors: true, emissive: 0
 glowMat.onBeforeCompile = (sh) => {
   sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance *= diffuseColor.rgb;');
 };
+
+let beaconTex: THREE.CanvasTexture | null = null;
+/** Vertical alpha ramp so the berth beacon fades softly into the sky. */
+function beaconFade() {
+  if (beaconTex) return beaconTex;
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 128;
+  const g = c.getContext('2d')!;
+  const gr = g.createLinearGradient(0, 0, 0, 128);
+  gr.addColorStop(0, '#000'); gr.addColorStop(0.55, '#555'); gr.addColorStop(1, '#fff');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 128);
+  beaconTex = new THREE.CanvasTexture(c);
+  return beaconTex;
+}
 
 export class Island {
   def: IslandDef;
@@ -389,7 +405,7 @@ export class Island {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
     geo.deleteAttribute('uv');
-    this.terrain = new THREE.Mesh(geo, terrainMat);
+    this.terrain = new THREE.Mesh(geo, this.def.style === 'volcano' ? lavaTerrainMat : terrainMat);
     this.terrain.position.set(this.cx, 0, this.cz);
     this.terrain.receiveShadow = true;
     this.group.add(this.terrain);
@@ -512,9 +528,9 @@ export class Island {
     const dirx = Math.sin(ry), dirz = Math.cos(ry);
     this.buoy.position.set(this.shipPark.x + dirx * 18, 0, this.shipPark.z + dirz * 18);
     this.group.add(this.buoy);
-    const bm = new THREE.MeshBasicMaterial({ color: 0xffd36a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
-    this.beacon = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 4, 600, 16, 1, true), bm);
-    this.beacon.position.set(this.shipPark.x, 300, this.shipPark.z);
+    const bm = new THREE.MeshBasicMaterial({ color: 0xffd36a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, alphaMap: beaconFade() });
+    this.beacon = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 3.6, 160, 16, 1, true), bm);
+    this.beacon.position.set(this.shipPark.x, 80, this.shipPark.z);
     this.beacon.visible = false;
     this.group.add(this.beacon);
     // Shipwright on every pier.
@@ -649,6 +665,27 @@ export class Island {
       const d = 20 + (i % 2) * 10;
       const x = base.x + Math.cos(a) * d, z = base.z + Math.sin(a) * d;
       this.npcs.push({ pos: new THREE.Vector3(x, this.h(x, z), z), rotY: dd, role: i === 3 ? 'elder' : 'villager', name: names[i], lines: this.villagerLines[i], seed: 10 + i });
+    }
+    // Street life: lamps along the path, a well, market stalls by the pier, rowboats on the beach.
+    const along = new THREE.Vector3(Math.cos(dd), 0, Math.sin(dd));
+    const side = new THREE.Vector3(-along.z, 0, along.x);
+    for (let i = 0; i < 6; i++) {
+      const p = base.clone().addScaledVector(along, -8 - i * 11).addScaledVector(side, (i % 2 ? 1 : -1) * 4.2);
+      this.place(p.x, p.z, Math.atan2(side.x, side.z) * (i % 2 ? 1 : -1), (b) => P.lampPost(b), 0.5, 0.1);
+    }
+    const wp = base.clone().addScaledVector(along, -30).addScaledVector(side, 10);
+    this.place(wp.x, wp.z, 0.4, (b) => P.well(b), 1.6, 0.1);
+    const stripes = [0xc8282b, 0x2f5fa8, 0x3f8a4a, 0xe8a030];
+    for (let i = 0; i < 4; i++) {
+      const p = base.clone().addScaledVector(along, -2 - (i % 2) * 5).addScaledVector(side, (i < 2 ? -1 : 1) * (9 + (i % 2) * 2));
+      const ry = Math.atan2(side.x, side.z) + (i < 2 ? 0 : Math.PI);
+      this.place(p.x, p.z, ry, (b) => { P.marketStall(b, stripes[i], i); P.crate(b, 2.2, 0, -0.4, 0.7, 0.3); P.barrel(b, -2.2, 0, -0.3, 0.8); }, 2, 0.1);
+    }
+    for (let i = 0; i < 3; i++) {
+      const a = dd + 0.25 + i * 0.07;
+      const r = this.coastRadius(a) * 0.985;
+      const x = this.cx + Math.cos(a) * r, z = this.cz + Math.sin(a) * r;
+      this.place(x, z, -a + i * 0.4, (b) => P.rowboat(b, stripes[i]), 0, 0.2);
     }
     // Fences and flower beds.
     for (let i = 0; i < 30; i++) {
@@ -910,6 +947,9 @@ export class Island {
         add(P.deadTree(), 130, { scale: [0.8, 1.5] });
         add(P.rock(0x2a2523, 3), 320, { col: 1.2, scale: [0.6, 3], slope: 0.4 });
         add(P.rock(0x4a2a1a, 4), 120, { col: 1, scale: [0.5, 1.5], slope: 0.4 });
+        add(P.obsidian(), 140, { col: 1, scale: [0.6, 1.8], slope: 0.5 });
+        add(P.magmaPool(), 60, { col: 1.5, scale: [0.8, 2.2], slope: 0.85, mat: magmaMat, shadow: false });
+        add(P.ashShrub(), 260, { col: 0, scale: [0.7, 1.4], shadow: false });
         break;
       case 'snow':
         add(P.pineTree(true), 420, { scale: [0.8, 1.6], slope: 0.6 });

@@ -146,7 +146,7 @@ export const ISLANDS: IslandDef[] = [
       'A volcano that never sleeps. Rivers of magma carve the black glass slopes.',
       'Admiral Kazan deserted the Navy and forged an army of ash-clad soldiers in its crater.',
     ],
-    theme: { sand: 0x3b3431, grass: 0x4a3f38, grass2: 0x5c4a3e, rock: 0x2a2523, peak: 0x1c1817, path: 0x6b5446, shallow: 0x3a7f86, fog: 0x9a7f74, skyTop: 0x5a4a5e, skyHorizon: 0xe0a07a, ambient: 'embers', storm: 0.15 },
+    theme: { sand: 0x2f2a2c, grass: 0x48393a, grass2: 0x5c3e32, rock: 0x2a2530, peak: 0x1a171d, path: 0x7a5c46, shallow: 0x3a7f86, fog: 0x9a7f74, skyTop: 0x5a4a5e, skyHorizon: 0xe0a07a, ambient: 'embers', storm: 0.15 },
   },
   {
     id: 3, name: 'Frostveil', title: 'Where the Sea Stands Still', style: 'snow',
@@ -164,7 +164,7 @@ export const ISLANDS: IslandDef[] = [
       'A storm-wracked rock crowned by a fortress the size of a city. Lightning never stops falling here.',
       'Warlord Gorrath, the Calamity, has never lost a fight. Admirals turn their fleets around at the sight of his banner.',
     ],
-    theme: { sand: 0x55524f, grass: 0x3c4a3a, grass2: 0x4b5a43, rock: 0x3a3a40, peak: 0x26262c, path: 0x6a645c, shallow: 0x2f6b78, fog: 0x4c5560, skyTop: 0x262b38, skyHorizon: 0x5d6574, ambient: 'rain', storm: 1 },
+    theme: { sand: 0x77736b, grass: 0x4e6b47, grass2: 0x627a4f, rock: 0x5c5c66, peak: 0x4a4a54, path: 0x8a8274, shallow: 0x2f6b78, fog: 0x4c5560, skyTop: 0x262b38, skyHorizon: 0x5d6574, ambient: 'rain', storm: 1 },
   },
   {
     id: 5, name: 'Mirage Dunes', title: 'Kingdom of the Shifting Sands', style: 'desert',
@@ -182,7 +182,7 @@ export const ISLANDS: IslandDef[] = [
       'The island at the end of the Grand Meridian, where the sun is said to rest each night.',
       'Here Aurelio the Dawnbringer hid the Daybreak Treasure. Emperor Vexis has guarded it for two hundred years.',
     ],
-    theme: { sand: 0xfff0c8, grass: 0xc7e07a, grass2: 0xf2d76a, rock: 0xe8e2d4, peak: 0xffffff, path: 0xfff6dc, shallow: 0x7ff0e0, fog: 0xffe8c0, skyTop: 0x5a7fd8, skyHorizon: 0xffe0b0, ambient: 'sparkle', storm: 0 },
+    theme: { sand: 0xfff0c8, grass: 0x78c25a, grass2: 0xa6d466, rock: 0xd9c49a, peak: 0xf4e6c4, path: 0xf6e2b0, shallow: 0x7ff0e0, fog: 0xffe8c0, skyTop: 0x5a7fd8, skyHorizon: 0xffe0b0, ambient: 'sparkle', storm: 0 },
   },
 ];
 

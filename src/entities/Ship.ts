@@ -6,6 +6,7 @@ import { buildShip, deckHeight, halfWidth, setCannons, animateRig, ShipDims, Shi
 import { clamp, damp, dampAngle, rand } from '../core/math';
 import type { DamageInfo, Target, Team } from '../combat/Combat';
 import { Projectiles } from '../combat/Projectiles';
+import { WakeTrail } from '../fx/WakeTrail';
 
 const SAIL_FRAC = [0, 0.38, 0.7, 1];
 
@@ -52,6 +53,7 @@ export class Ship implements Target {
   smoke = 0;
   onSunk: (() => void) | null = null;
   lastHitBy: 'player' | 'companion' | 'ship' | 'enemy' | 'env' | undefined;
+  private trail: WakeTrail;
 
   constructor(style: ShipStyle, dims: Partial<ShipDims> = {}, opts: { name?: string; look?: { hat: string; hatColor: string } } = {}) {
     this.style = style;
@@ -63,6 +65,7 @@ export class Ship implements Target {
     this.radius = this.dims.L * 0.45;
     setCannons(this.parts, this.dims, this.cannonsPerSide);
     ctx.scene.add(this.group);
+    this.trail = new WakeTrail(ctx.scene, this.dims.W * 0.55);
   }
 
   setCannonCount(n: number) {
@@ -116,12 +119,12 @@ export class Ship implements Target {
   /** Mast colliders in world space. */
   collideOnDeck(p: THREE.Vector3, r: number) {
     const d = this.dims;
-    const masts = [d.L * 0.04, d.L * 0.3];
-    for (const mz of masts) {
+    const masts: [number, number][] = [[d.L * 0.04, 0.4], [d.L * 0.3, 0.4], [d.L * 0.04 - 2.1, 0.55]];
+    for (const [mz, pad] of masts) {
       const mx = this.pos.x + Math.sin(this.heading) * mz, mzw = this.pos.z + Math.cos(this.heading) * mz;
       const dx = p.x - mx, dz = p.z - mzw;
       const dist = Math.hypot(dx, dz);
-      if (dist < r + 0.4 && dist > 1e-4) { p.x = mx + dx / dist * (r + 0.4); p.z = mzw + dz / dist * (r + 0.4); }
+      if (dist < r + pad && dist > 1e-4) { p.x = mx + dx / dist * (r + pad); p.z = mzw + dz / dist * (r + pad); }
     }
   }
 
@@ -289,6 +292,8 @@ export class Ship implements Target {
 
   private wake(dt: number) {
     const sp = Math.abs(this.speed);
+    const sternW = this.toWorld(new THREE.Vector3(0, 0, -this.dims.L * 0.47));
+    this.trail.update(dt, sternW, this.sinking > 0 ? 0 : this.speed, (x, z) => ctx.ocean.heightAt(x, z));
     if (sp < 2 || this.group.position.distanceToSquared(ctx.camera.position) > 400 * 400) return;
     const rate = Math.min(1, sp / 25);
     const L = this.dims.L;
@@ -296,7 +301,7 @@ export class Ship implements Target {
       for (const side of [-1, 1]) {
         const p = this.toWorld(new THREE.Vector3(side * this.dims.W * 0.35, 0, -L * 0.45));
         p.y = ctx.ocean.heightAt(p.x, p.z) + 0.2;
-        ctx.particles.emit({ pos: p, vel: this.right.multiplyScalar(side * -1.5).add(new THREE.Vector3(0, 0.3, 0)), life: 3.2, size: 1.4, sizeEnd: 4.5, color: 0xffffff, colorEnd: 0xd8f0ff, alpha: 0.55, drag: 1.5 });
+        ctx.particles.emit({ pos: p, vel: this.right.multiplyScalar(side * -1.5).add(new THREE.Vector3(0, 0.6, 0)), life: 1.4, size: 0.9, sizeEnd: 2.2, color: 0xffffff, colorEnd: 0xd8f0ff, alpha: 0.4, drag: 1.5 });
       }
     }
     if (Math.random() < rate) {
@@ -353,6 +358,7 @@ export class Ship implements Target {
 
   dispose() {
     ctx.scene.remove(this.group);
+    this.trail.dispose(ctx.scene);
     this.group.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh) {
