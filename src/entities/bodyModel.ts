@@ -106,6 +106,25 @@ function fitPart(name: 'torso' | 'arm' | 'leg', side: 1 | -1, fit: BodyFit, cov:
         skinIndex[i * 4 + k] = jointIndex(mirrorJoint(j, jointIndex));
       }
     }
+    // Cloth folds: drape where the shirt tucks into the waistband, creases behind the knee and
+    // bunching at the ankle. Pushed along the limb/torso radius so toon shading picks them up.
+    const ang = name === 'torso' ? Math.atan2(v.x, v.z) : Math.atan2(rel.x, rel.z);
+    let fold = 0;
+    if (name === 'torso' && cov.top) {
+      const y = v.y;
+      fold = 0.012 * b * smooth(1.22, 1.04, y) * smooth(0.99, 1.03, y) * (0.6 + 0.4 * Math.sin(ang * 9 + 1.3) * Math.sin(ang * 4 - 0.5))
+        + 0.005 * gauss(y - 1.38, 0.05) * Math.max(0, Math.cos(ang)) * Math.sin(ang * 14);
+    } else if (name === 'leg' && !(cov.shorts && param[i] > 0.43)) {
+      const s = param[i];
+      fold = 0.007 * gauss(s - 0.45, 0.06) * Math.sin(s * 70 + ang * 1.5) * (0.5 + 0.5 * Math.cos(ang - Math.PI))
+        + 0.003 * gauss(s - 0.15, 0.08) * Math.sin(ang * 6 + s * 30);
+    } else if (name === 'arm' && param[i] < cov.sleeve) {
+      fold = 0.005 * Math.sin(ang * 5 + param[i] * 50) * smooth(0.02, 0.1, param[i]);
+    }
+    if (fold) {
+      if (name === 'torso') { const r = Math.hypot(v.x, v.z) || 1; v.x += (v.x / r) * fold; v.z += (v.z / r) * fold; }
+      else { const r = rel.length() || 1; v.addScaledVector(rel, fold / r); }
+    }
     if (side === -1) v.x = -v.x;
     pos.setXYZ(i, v.x, v.y, v.z);
   }
