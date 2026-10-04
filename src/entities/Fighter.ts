@@ -2,7 +2,7 @@
 // ship decks, knockback, status effects, timed actions and rig animation.
 import * as THREE from 'three';
 import { ctx } from '../game/ctx';
-import { Humanoid, RigLook } from './Humanoid';
+import { Humanoid, RigLook, type CharRig } from './Humanoid';
 import type { Ship } from './Ship';
 import type { DamageInfo, Target, Team } from '../combat/Combat';
 import { clamp, damp, dampAngle, rand } from '../core/math';
@@ -13,7 +13,7 @@ export interface Action { name: string; anim: string; t: number; dur: number; ev
 const GRAVITY = 30;
 
 export class Fighter implements Target {
-  rig: Humanoid;
+  rig: CharRig;
   pos = new THREE.Vector3();
   vel = new THREE.Vector3();
   knock = new THREE.Vector3();

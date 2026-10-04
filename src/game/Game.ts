@@ -25,6 +25,7 @@ import { Ship } from '../entities/Ship';
 import { Enemy, factionLook, EnemyType } from '../entities/Enemy';
 import { Boss, BOSSES } from '../entities/Boss';
 import { Humanoid, RigLook } from '../entities/Humanoid';
+import { loadCaptainModel } from '../entities/ModelRig';
 import type { EnemyShip } from '../entities/EnemyShip';
 import { Encounters } from './Encounters';
 import { CameraRig } from './CameraRig';
@@ -115,7 +116,7 @@ export class Game {
     ctx.world = new World(ctx.scene);
     this.grass = new Grass(ctx.scene);
     ctx.cam = new CameraRig(ctx.camera);
-    await loadBodyParts(import.meta.env.BASE_URL + 'models/characters.glb');
+    await Promise.all([loadBodyParts(import.meta.env.BASE_URL + 'models/characters.glb'), loadCaptainModel(import.meta.env.BASE_URL + 'models/luffy.glb')]);
     await ctx.world.generate((f, label) => ctx.ui.loading(0.05 + f * 0.8, label));
     ctx.ui.loading(0.88, 'Painting the sea charts...');
     await this.frame();

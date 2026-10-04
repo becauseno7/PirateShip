@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { ctx } from '../game/ctx';
 import { FRUITS, FruitId } from '../game/data';
 import type { Player } from '../entities/Player';
+import { ModelRig } from '../entities/ModelRig';
 import type { DamageInfo, Target } from './Combat';
 import { rand, smoothstep, easeOutCubic, easeInCubic } from '../core/math';
 
@@ -59,6 +60,17 @@ export function basicHit(p: Player, comboIdx: number) {
 
 /** The rubbery stretching arm: a tube from shoulder to target and back. */
 export function stretchArm(p: Player, to: THREE.Vector3, dur = 0.35, color?: number) {
+  const rig = p.rig;
+  if (rig instanceof ModelRig) {
+    // The captain model stretches its own arm: shoot out to the target and snap back.
+    const s0 = new THREE.Vector3();
+    ctx.fx.custom(new THREE.Group(), dur, (t) => {
+      const s = rig.worldPos('shR', s0);
+      const k = t < 0.5 ? easeOutCubic(t * 2) : 1 - easeInCubic((t - 0.5) * 2);
+      rig.stretchTo(k > 0.02 ? s.clone().lerp(to, k) : null);
+    }, () => rig.stretchTo(null));
+    return;
+  }
   const skin = color ?? new THREE.Color(p.look.skin as any).getHex();
   const g = new THREE.Group();
   const armMat = new THREE.MeshToonMaterial({ color: skin });

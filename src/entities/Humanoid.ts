@@ -5,7 +5,7 @@ import { ARM_ANGLE, bodyGeometry, bodyPartsReady, handGeometry, modelFace, model
 import { EXPR, Expr, FaceOpts, FaceStyle, atlasView, beardGeometry, faceAtlas, faceGeometry, fistGeometry, hairGeometry, headGeometry, headPoint, setAtlasCell, shell } from './rigParts';
 
 // Flickering rim-lit flame aura for awakened fighters.
-function auraMaterial(color: number) {
+export function auraMaterial(color: number) {
   return new THREE.ShaderMaterial({
     uniforms: { uTime: sharedUniforms.uTime, uColor: { value: new THREE.Color(color) } },
     vertexShader: `varying vec3 vN; varying vec3 vV; varying vec3 vP;
@@ -66,7 +66,7 @@ export interface AnimInput {
   turn?: number;
 }
 
-type J = 'body' | 'hips' | 'spine' | 'chest' | 'neck' | 'head' | 'shL' | 'elL' | 'haL' | 'shR' | 'elR' | 'haR' | 'hiL' | 'knL' | 'ftL' | 'hiR' | 'knR' | 'ftR';
+export type J = 'body' | 'hips' | 'spine' | 'chest' | 'neck' | 'head' | 'shL' | 'elL' | 'haL' | 'shR' | 'elR' | 'haR' | 'hiL' | 'knL' | 'ftL' | 'hiR' | 'knR' | 'ftR';
 type Pose = Partial<Record<J, [number, number, number]>>;
 const JOINTS: J[] = ['body', 'hips', 'spine', 'chest', 'neck', 'head', 'shL', 'elL', 'haL', 'shR', 'elR', 'haR', 'hiL', 'knL', 'ftL', 'hiR', 'knR', 'ftR'];
 
@@ -81,7 +81,7 @@ function capsule(r: number, len: number) {
 }
 
 /** Soft anime rim light: brightens silhouette edges so characters pop off the background. */
-function rimLight(m: THREE.MeshToonMaterial) {
+export function rimLight(m: THREE.MeshToonMaterial) {
   m.onBeforeCompile = (sh) => {
     sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
       float rimK = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 2.6);
@@ -293,7 +293,21 @@ const ACTIONS: Record<string, (t: number) => { pose: Pose; w: number; bodyY?: nu
   },
 };
 
-export class Humanoid {
+/** What the game needs from a character rig: the procedural Humanoid or the captain's ModelRig. */
+export interface CharRig {
+  root: THREE.Group;
+  armR: THREE.Object3D;
+  update(dt: number, s: AnimInput): void;
+  worldPos(joint: J, out?: THREE.Vector3): THREE.Vector3;
+  flash(color?: number, dur?: number): void;
+  setTint(c: number | null): void;
+  setAura(color: number | null): void;
+  setHairColor(c: number): void;
+  setEyeGlow(c: number): void;
+  dispose(): void;
+}
+
+export class Humanoid implements CharRig {
   root = new THREE.Group();
   j = {} as Record<J, THREE.Group>;
   look: RigLook;

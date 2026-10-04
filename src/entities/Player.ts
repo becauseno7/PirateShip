@@ -8,7 +8,8 @@ import { Look, damageMult, maxHpFor } from '../game/state';
 import { basicHit, castAbility } from '../combat/Fruits';
 import type { DamageInfo, Target } from '../combat/Combat';
 import { clamp, damp, dampAngle, rand, lerp } from '../core/math';
-import { Humanoid, RigLook } from './Humanoid';
+import { Humanoid, RigLook, type CharRig } from './Humanoid';
+import { ModelRig, captainModelReady } from './ModelRig';
 
 export function lookToRig(l: Look, outline = true): RigLook {
   return {
@@ -49,6 +50,20 @@ export class Player extends Fighter {
     this.hpMax = maxHpFor(ctx.progress.level);
     this.hp = this.hpMax;
     ctx.combat.register(this);
+    this.swapRig(this.makeRig(look));
+  }
+
+  /** The straw-hat captain is the hand-animated model; any other look uses the procedural rig. */
+  private makeRig(look: Look): CharRig {
+    return look.hat === 'straw' && captainModelReady() ? new ModelRig() : new Humanoid(lookToRig(look));
+  }
+
+  private swapRig(rig: CharRig) {
+    if (rig === this.rig) return;
+    ctx.scene.remove(this.rig.root);
+    this.rig.dispose();
+    this.rig = rig;
+    ctx.scene.add(rig.root);
   }
 
   get damageMult() { return damageMult(ctx.progress.level) * (this.awakened ? 1.6 : 1); }
@@ -66,11 +81,8 @@ export class Player extends Fighter {
   }
 
   rebuildLook(look: Look) {
-    const old = this.rig;
     this.look = look;
-    ctx.scene.remove(old.root);
-    this.rig = new Humanoid(lookToRig(look));
-    ctx.scene.add(this.rig.root);
+    this.swapRig(this.makeRig(look));
     this.setAwakened(this.awakened);
   }
 
