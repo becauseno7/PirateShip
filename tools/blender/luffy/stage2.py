@@ -198,33 +198,79 @@ def left_arm_transplant(twist=float(__import__('os').environ.get('LTWIST','0')))
     fR={gi['forearm.R'],gi['hand.R']}; fL={gi['forearm.L'],gi['hand.L']}
     # 1. melt the old left mitten back into the hip: weights, UVs and shape from the nearest garment
     from mathutils import kdtree
-    oldset={v for v in bm.verts if sum(w for k,w in v[dl].items() if k in fL)>0.4}
-    keep=[v for v in bm.verts if v not in oldset and sum(w for k,w in v[dl].items() if k in fL|{gi['upperarm.L']})<0.05]
-    kd=kdtree.KDTree(len(keep))
-    for i,v in enumerate(keep): kd.insert(v.co,i)
-    kd.balance()
+    import colorsys
+    from mathutils.geometry import intersect_point_line
+    img=[n.image for n in o.data.materials[0].node_tree.nodes if n.type=='TEX_IMAGE' and 'normal' not in n.image.name and 'metal' not in n.image.name][0]
+    IW,IH=img.size; px=np.empty(IW*IH*4,np.float32); img.pixels.foreach_get(px); px=px.reshape(IH,IW,4)
     vuv={}
     for f in bm.faces:
         for l in f.loops: vuv.setdefault(l.vert, l[uvl].uv.copy())
+    def texel(v):
+        uv=vuv.get(v)
+        if uv is None: return None
+        return colorsys.rgb_to_hsv(*px[int(min(max(uv.y,0),0.999)*IH),int(min(max(uv.x,0),0.999)*IW),:3])
+    def purple(v):
+        c=texel(v); return c is not None and 0.68<c[0]<0.9 and c[1]>0.25
+    oldset={v for v in bm.verts if sum(w for k,w in v[dl].items() if k in fL)>0.4}
+    # garment_fix already handed most of the hanging AI forearm and hand to the hips, and the AI painted
+    # part of the arm shorts-orange, so weights and colour both miss pieces that then hang at the hip as
+    # a ghost arm. Take everything but the sash in the arm's volume below the sleeve, and anchor the
+    # melt on surfaces clear of that volume.
+    fb=ao.data.bones['forearm.L']; hb=ao.data.bones['hand.L']
+    hd=(hb.tail_local-hb.head_local).normalized()
+    segs=[(fb.head_local.lerp(fb.tail_local,0.18),fb.tail_local,0.042),(hb.head_local,hb.tail_local+hd*0.05,0.056)]
+    def armdist(v):
+        best=9
+        for a,b,r in segs:
+            t=max(0,min(1,intersect_point_line(v.co,a,b)[1]))
+            best=min(best,(v.co-a.lerp(b,t)).length/r)
+        return best
+    ghost={v for v in bm.verts if armdist(v)<1 and not purple(v)}
+    front=list(ghost)
+    while front:
+        nxt=[]
+        for v in front:
+            for e in v.link_edges:
+                w=e.other_vert(v)
+                if w not in ghost and armdist(w)<1.4 and not purple(w): ghost.add(w); nxt.append(w)
+        front=nxt
+    print('left arm: ghost verts',len(ghost-oldset),'beyond the weighted mitten',len(oldset))
+    oldset|=ghost
+    keep=[v for v in bm.verts if v not in oldset and armdist(v)>1.5 and sum(w for k,w in v[dl].items() if k in fL|{gi['upperarm.L']})<0.05]
+    kd=kdtree.KDTree(len(keep))
+    for i,v in enumerate(keep): kd.insert(v.co,i)
+    kd.balance()
     near={}
     for v in oldset:
         q=keep[kd.find(v.co)[1]]; near[v]=q
     for v,q in near.items():
         d=v[dl]; d.clear()
         for k,w in q[dl].items(): d[k]=w
-        v.co=q.co+(v.co-q.co)*0.25
+    # Detach the old arm from the sleeve, then relax it into a smooth patch spanning where it met the
+    # hip (a membrane pinned to the surrounding garment) instead of a lump.
+    up=gi['upperarm.L']
+    cut=[f for f in bm.faces if any(v in oldset for v in f.verts) and any(v not in oldset and v[dl].get(up,0)>0.3 for v in f.verts)]
+    bmesh.ops.delete(bm, geom=cut, context='FACES_ONLY')
+    oldset={v for v in oldset if v.is_valid}
+    lone=[v for v in oldset if not v.link_faces]
+    bmesh.ops.delete(bm, geom=lone, context='VERTS'); oldset-=set(lone)
+    near={v:q for v,q in near.items() if v in oldset}
+    for it in range(400):
+        nc={}
+        for v in oldset:
+            ns=[e.other_vert(v).co for e in v.link_edges]
+            nc[v]=sum(ns,Vector())/len(ns) if ns else v.co
+        for v,c in nc.items(): v.co=c
+    print('left arm: cut',len(cut),'sleeve faces; relaxed',len(oldset))
     # paint the melted lump plain shorts-orange (nearest orange texel to the lump)
-    import colorsys
-    img=[n.image for n in o.data.materials[0].node_tree.nodes if n.type=='TEX_IMAGE' and 'normal' not in n.image.name and 'metal' not in n.image.name][0]
-    IW,IH=img.size; px=np.empty(IW*IH*4,np.float32); img.pixels.foreach_get(px); px=px.reshape(IH,IW,4)
     cen=sum((v.co for v in oldset),Vector())/len(oldset)
     best=None
-    for v in sorted(keep,key=lambda q:(q.co-cen).length)[:400]:
+    for v in sorted(keep,key=lambda q:(q.co-cen).length)[:1500]:
         uv=vuv.get(v)
         if uv is None: continue
         c=px[int(min(max(uv.y,0),0.999)*IH),int(min(max(uv.x,0),0.999)*IW),:3]
         h,sa,va=colorsys.rgb_to_hsv(*c)
-        if 0.04<h<0.11 and sa>0.55 and va>0.6: best=uv; break
+        if 0.05<h<0.1 and sa>0.74 and va>0.75: best=uv; break
     print('left arm: lump colour uv',best)
     for f in bm.faces:
         for l in f.loops:

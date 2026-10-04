@@ -1,7 +1,7 @@
 """Clean stylised hands with finger bones, replacing the AI claws (imported by stage2)."""
 import bpy, bmesh, math, os
 import numpy as np
-from mathutils import Vector, Matrix
+from mathutils import Vector, Matrix, noise
 
 FINGERS = [  # name, lateral offset (x palm width/2), lengths (prox, mid, dist), radius
     ('index', 0.70, (0.040, 0.026, 0.022), 0.0108),
@@ -10,6 +10,7 @@ FINGERS = [  # name, lateral offset (x palm width/2), lengths (prox, mid, dist),
     ('pinky', -0.68, (0.032, 0.021, 0.019), 0.0094),
 ]
 PALM_W, PALM_L, PALM_T = 0.088, 0.084, 0.034
+LIFT = 1.1   # base skin is lifted by this; the default shade (LIFT^-2.2, linear) brings it back
 
 
 def skin_colour(o):
@@ -60,10 +61,17 @@ def build(o, ao, S, twist_R=0.0, twist_L=0.0):
     gi = {g.name: g.index for g in o.vertex_groups}
     skin = skin_colour(o)
     skin = np.clip(skin * np.array([1.0, 1.06, 0.98]), 0, 1)
-    lin = [c ** 2.2 for c in skin]
+    # base colour is the lit skin; the 'shade' vertex colours paint shadow, creases and nails onto it
+    lin = [min(1.0, (c * LIFT) ** 2.2) for c in skin]
     mat = bpy.data.materials.new('skin'); mat.use_nodes = True
-    bs = mat.node_tree.nodes['Principled BSDF']
+    nt = mat.node_tree; bs = nt.nodes['Principled BSDF']
     bs.inputs['Base Color'].default_value = (*lin, 1); bs.inputs['Roughness'].default_value = 0.62
+    rgb = nt.nodes.new('ShaderNodeRGB'); rgb.outputs[0].default_value = (*lin, 1)
+    at = nt.nodes.new('ShaderNodeVertexColor'); at.layer_name = 'shade'
+    mix = nt.nodes.new('ShaderNodeMix'); mix.data_type = 'RGBA'; mix.blend_type = 'MULTIPLY'
+    mix.inputs['Factor'].default_value = 1.0
+    nt.links.new(rgb.outputs[0], mix.inputs[6]); nt.links.new(at.outputs['Color'], mix.inputs[7])
+    nt.links.new(mix.outputs[2], bs.inputs['Base Color'])   # stage3 unlinks this before export
     me.materials.append(mat); mi = len(me.materials) - 1
 
     bm = bmesh.new(); bm.from_mesh(me)
@@ -98,6 +106,7 @@ def build(o, ao, S, twist_R=0.0, twist_L=0.0):
 
     newbones = []  # (name, head, tail, parent, zaxis)
     groups = {}    # bone -> list of (bmvert, weight)
+    palm_n = {}    # side -> palm normal (fingers curl toward it)
     for side, guess, tw in (('R', Vector((0, 0, -1)), twist_R), ('L', Vector((-1, 0, 0)), twist_L)):
         hb = ao.data.bones['hand.' + side]
         W = hb.head_local.copy(); v = (hb.tail_local - hb.head_local).normalized()
@@ -105,6 +114,7 @@ def build(o, ao, S, twist_R=0.0, twist_L=0.0):
         n = Matrix.Rotation(tw, 3, v) @ n
         t = v.cross(n) if side == 'R' else n.cross(v)   # thumb side
         k = v.cross(n)                                    # finger curl axis (+bend curls into the palm)
+        palm_n[side] = n.copy()
 
         def add(vs, bone, w=1.0):
             groups.setdefault(bone, []).extend((x, w) for x in vs)
@@ -177,3 +187,64 @@ def build(o, ao, S, twist_R=0.0, twist_L=0.0):
         g = o.vertex_groups.get(bn) or o.vertex_groups.new(name=bn)
         for i, w in lst: g.add([i], w, 'REPLACE')
     print('hands: built', len(newv), 'verts,', len(newbones), 'finger bones')
+    shade(o, gidx, newbones, palm_n)
+
+
+def _ss(a, b, x):
+    t = min(1.0, max(0.0, (x - a) / (b - a))); return t * t * (3 - 2 * t)
+
+
+def shade(o, gidx, newbones, palm_n):
+    """Paint the new skin the way the AI texture is painted: warm shadow in creases and between the
+    fingers (ambient occlusion), reddened knuckles and fingertips, a lighter palm and pale nails."""
+    from mathutils.bvhtree import BVHTree
+    me = o.data; me.update()
+    bm = bmesh.new(); bm.from_mesh(me); tree = BVHTree.FromBMesh(bm); bm.free()
+    ca = me.color_attributes.get('shade') or me.color_attributes.new('shade', 'FLOAT_COLOR', 'POINT')
+    one = [1.0] * (4 * len(me.vertices)); ca.data.foreach_set('color', one)
+    owner = {}
+    for bn, lst in gidx.items():
+        for i, w in lst:
+            if w > owner.get(i, ('', 0))[1]: owner[i] = (bn, w)
+    seg = {bn: (h, t) for bn, h, t, _, _ in newbones}
+    # cosine-weighted hemisphere directions (fibonacci spiral)
+    ND = 40; dirs = []
+    for j in range(ND):
+        r = math.sqrt((j + 0.5) / ND); a = j * 2.39996
+        dirs.append((r * math.cos(a), r * math.sin(a), math.sqrt(max(0.0, 1 - r * r))))
+    SHADOW = Vector((0.66, 0.47, 0.45)); BASE = LIFT ** -2.2; MAXD = 0.04   # linear space
+    for i, (bn, _) in owner.items():
+        v = me.vertices[i]; P = v.co; N = v.normal
+        tx = N.orthogonal().normalized(); ty = N.cross(tx)
+        occ = 0.0
+        for x, y, z in dirs:
+            d = tx * x + ty * y + N * z
+            hit = tree.ray_cast(P + N * 0.0012, d, MAXD)
+            if hit[0] is not None: occ += 1.0 - hit[3] / MAXD
+        ao = 1.0 - min(1.0, occ / ND * 1.2)
+        if bn in seg:   # fingers touch side by side at rest; that contact is gone once they curl
+            ao = 1.0 - (1.0 - ao) * 0.35
+        side = bn[-1]; n = palm_n[side]
+        dors = _ss(0.15, 0.7, -N.dot(n)); palm = _ss(0.1, 0.7, N.dot(n))
+        col = Vector((BASE, BASE, BASE))
+        col = col.lerp(Vector((BASE * SHADOW.x, BASE * SHADOW.y, BASE * SHADOW.z)), (1 - ao) * 0.75)
+        ink = _ss(0.45, 0.2, ao)   # the deepest creases get a brushed ink line, like the AI's folds
+        col = col.lerp(Vector((0.16, 0.07, 0.06)), ink * 0.7)
+        if bn in seg:
+            h, t = seg[bn]; L = (t - h).length; s = (P - h).dot((t - h) / L) / L
+            if bn[-3] in '12':   # knuckles: a flush of red over the joint on the back of the hand
+                kn = _ss(0.32, 0.0, s) * dors * (1.0 if bn[-3] == '1' else 0.6)
+                col = Vector((col.x, col.y * (1 - 0.08 * kn), col.z * (1 - 0.1 * kn)))
+            if bn[-3] == '3':
+                tip = _ss(0.55, 1.05, s) * (1 - dors)
+                col = Vector((col.x, col.y * (1 - 0.06 * tip), col.z * (1 - 0.07 * tip)))
+                nail = _ss(0.3, 0.5, s) * _ss(1.15, 0.95, s) * _ss(0.45, 0.85, -N.dot(n))
+                col = col.lerp(Vector((1.0, 0.9, 0.88)), nail * 0.75)
+        elif bn.startswith('hand'):
+            col = col.lerp(Vector((col.x, col.y * 0.95, col.z * 0.94)), palm * 0.6)   # pinker palm
+        # the AI skin is hand-painted, never flat: a faint warm mottle breaks up the smooth surface
+        mot = noise.noise(P * 90.0) * 0.6 + noise.noise(P * 260.0) * 0.4
+        col = Vector((col.x * (1 + 0.05 * mot), col.y * (1 + 0.07 * mot), col.z * (1 + 0.08 * mot)))
+        c = [min(1.0, max(0.0, x)) for x in col]
+        ca.data[i].color = (*c, 1.0)
+    print('hands: shaded', len(owner), 'verts')

@@ -106,7 +106,15 @@ export class ModelRig implements CharRig {
     m.emissiveMap = src.map;
     m.userData.base = src.map ? new THREE.Color(0.3, 0.3, 0.3) : src.color.clone().multiplyScalar(0.3);
     m.emissive.copy(m.userData.base);
-    if (src.map) {
+    if (src.name === 'skin') {
+      // The modelled hands carry painted shading (creases, knuckles, nails) as vertex colours.
+      m.vertexColors = true;
+      m.onBeforeCompile = (sh) => {
+        sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>',
+          '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vColor.rgb;');
+      };
+      m.customProgramCacheKey = () => 'captain-skin';
+    } else if (src.map) {
       // Gear-5 style hair recolour: dark texels above the neck, outside the hat material.
       const hair = this.hair;
       m.onBeforeCompile = (sh) => {

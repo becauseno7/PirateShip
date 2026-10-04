@@ -37,9 +37,13 @@ for m in o.data.materials:
         elif n.type=='TEX_IMAGE' and n.image and 'normal' in n.image.name and n.image.size[0]>1024: n.image.scale(1024,1024)
     if bsdf:
         bsdf.inputs['Metallic'].default_value=0.0; bsdf.inputs['Roughness'].default_value=0.8
+        # the hands multiply their 'shade' vertex colours in Blender; export a plain base colour and let
+        # the game apply the colours (the exporter can't bake a multiply node)
+        if m.name=='skin':
+            for l in list(bsdf.inputs['Base Color'].links): m.node_tree.links.remove(l)
 bpy.ops.object.select_all(action='DESELECT'); o.select_set(True); ao.select_set(True)
 bpy.ops.export_scene.gltf(filepath=out, export_format='GLB', use_selection=True, export_yup=True,
     export_skins=True, export_animations=True, export_animation_mode='NLA_TRACKS', export_force_sampling=True,
     export_frame_step=1, export_optimize_animation_size=True, export_image_format='JPEG', export_jpeg_quality=86,
-    export_def_bones=False, export_anim_slide_to_zero=True, export_bake_animation=False, export_reset_pose_bones=True)
+    export_def_bones=False, export_vertex_color='NAME', export_vertex_color_name='shade', export_all_vertex_colors=True, export_anim_slide_to_zero=True, export_bake_animation=False, export_reset_pose_bones=True)
 print('exported',time.time()-t0)
