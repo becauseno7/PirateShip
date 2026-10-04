@@ -5,8 +5,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { charOutlineMat, clothGradient, skinGradient } from '../world/materials';
-import { auraMaterial, rimLight, type AnimInput, type CharRig, type J } from './Humanoid';
+import { auraMaterial, type AnimInput, type CharRig, type J } from './Humanoid';
 import { clamp, damp, lerp } from '../core/math';
 
 let tpl: { scene: THREE.Group; clips: Map<string, THREE.AnimationClip> } | null = null;
@@ -47,7 +46,7 @@ export class ModelRig implements CharRig {
   private acts = new Map<string, THREE.AnimationAction>();
   private w = new Map<string, number>();
   private bones = {} as Record<string, THREE.Bone>;
-  private mats: THREE.MeshToonMaterial[] = [];
+  private mats: THREE.MeshStandardMaterial[] = [];
   private flashT = 0;
   private flashColor = new THREE.Color();
   private tint: THREE.Color | null = null;
@@ -77,11 +76,8 @@ export class ModelRig implements CharRig {
       if (!m.isSkinnedMesh) return;
       m.frustumCulled = false;
       m.castShadow = true;
-      m.material = this.toon(m.material as THREE.MeshStandardMaterial);
-      const ol = new THREE.SkinnedMesh(m.geometry, charOutlineMat);
-      ol.frustumCulled = false;
-      m.parent!.add(ol);
-      ol.bind(m.skeleton, m.bindMatrix);
+      m.receiveShadow = true;
+      m.material = this.material(m.material as THREE.MeshStandardMaterial);
     });
     this.mixer = new THREE.AnimationMixer(this.model);
     for (const [name, clip] of tpl.clips) {
@@ -98,20 +94,22 @@ export class ModelRig implements CharRig {
 
   private bone(n: string) { return this.bones[THREE.PropertyBinding.sanitizeNodeName(n)]; }
 
-  private toon(src: THREE.MeshStandardMaterial) {
-    const skin = src.name === 'skin';
-    const m = new THREE.MeshToonMaterial({
+  // Plain lit materials, as the model was authored: cel bands and inked hulls break up the
+  // AI texture's painted face and hair (thin overlapping shells turn into black blotches).
+  private material(src: THREE.MeshStandardMaterial) {
+    const m = new THREE.MeshStandardMaterial({
       name: src.name, color: src.color.clone(), map: src.map, normalMap: src.normalMap,
-      gradientMap: skin ? skinGradient() : clothGradient(),
+      roughness: 0.85, metalness: 0, side: THREE.DoubleSide,
     });
     if (src.normalMap) m.normalScale.set(0.6, 0.6);
-    rimLight(m);
+    // A little self-light from the texture so the painted colours survive back-lit, hat-shadowed shots.
+    m.emissiveMap = src.map;
+    m.userData.base = src.map ? new THREE.Color(0.3, 0.3, 0.3) : src.color.clone().multiplyScalar(0.3);
+    m.emissive.copy(m.userData.base);
     if (src.map) {
       // Gear-5 style hair recolour: dark texels above the neck, outside the hat material.
       const hair = this.hair;
-      const prev = m.onBeforeCompile;
-      m.onBeforeCompile = (sh, r) => {
-        prev.call(m, sh, r);
+      m.onBeforeCompile = (sh) => {
         sh.uniforms.uHair = hair;
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vHairY;')
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHairY = position.y;');
@@ -141,7 +139,7 @@ export class ModelRig implements CharRig {
     for (const m of this.mats) {
       if (this.flashT > 0) m.emissive.copy(this.flashColor);
       else if (this.tint) m.emissive.copy(this.tint);
-      else m.emissive.setRGB(0, 0, 0);
+      else m.emissive.copy(m.userData.base);
     }
   }
   setHairColor(c: number) {

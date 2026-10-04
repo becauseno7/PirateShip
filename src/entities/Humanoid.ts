@@ -81,7 +81,7 @@ function capsule(r: number, len: number) {
 }
 
 /** Soft anime rim light: brightens silhouette edges so characters pop off the background. */
-export function rimLight(m: THREE.MeshToonMaterial) {
+function rimLight(m: THREE.MeshToonMaterial) {
   m.onBeforeCompile = (sh) => {
     sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
       float rimK = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 2.6);
